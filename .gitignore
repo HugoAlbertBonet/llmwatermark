@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Testing / tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Models and generated assets
+*.gguf
+*.safetensors
+*.bin
+examples/output/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local scratch
+

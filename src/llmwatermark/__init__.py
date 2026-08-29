@@ -20,6 +20,7 @@ from llmwatermark.errors import (
     TokenizerInterfaceError,
     VocabMismatchError,
 )
+from llmwatermark.processor import WatermarkProcessor
 from llmwatermark.vocab import fingerprint_from_tokenizer
 
 __version__ = "0.1.0.dev0"
@@ -35,6 +36,7 @@ __all__ = [
     "TokenizerInterfaceError",
     "VocabMismatchError",
     "WatermarkConfig",
+    "WatermarkProcessor",
     "__version__",
     "fingerprint_from_tokenizer",
     "generate_secret_key",

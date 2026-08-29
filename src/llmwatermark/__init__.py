@@ -16,6 +16,7 @@ from llmwatermark.config import (
 from llmwatermark.errors import (
     ConfigError,
     LLMWatermarkError,
+    SeedingError,
     TokenizerInterfaceError,
     VocabMismatchError,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "HashScheme",
     "LLMWatermarkError",
     "MixWidth",
+    "SeedingError",
     "TokenizerInterfaceError",
     "VocabMismatchError",
     "WatermarkConfig",

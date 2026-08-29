@@ -12,6 +12,7 @@ from __future__ import annotations
 
 __all__ = [
     "ConfigError",
+    "DetectionError",
     "LLMWatermarkError",
     "SeedingError",
     "TokenizerInterfaceError",
@@ -32,6 +33,15 @@ class VocabMismatchError(LLMWatermarkError, ValueError):
 
     Raised before any scoring happens. Continuing would partition a different set of
     token IDs than the generator did, producing a confidently wrong answer.
+    """
+
+
+class DetectionError(LLMWatermarkError, ValueError):
+    """Detection cannot produce a meaningful answer for this input.
+
+    Raised instead of returning a confident-looking score that the data cannot support,
+    for example when too few tokens survive the context deduplication for the z-test's
+    normal approximation to hold.
     """
 
 

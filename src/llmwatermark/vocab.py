@@ -22,9 +22,11 @@ from llmwatermark.errors import TokenizerInterfaceError, VocabMismatchError
 __all__ = [
     "FINGERPRINT_DOMAIN",
     "FINGERPRINT_SAMPLE_SIZE",
+    "encode_text",
     "fingerprint_from_tokenizer",
     "fingerprint_sample_ids",
     "observed_vocab_size",
+    "piece_text",
     "resolve_id_to_piece",
 ]
 
@@ -125,6 +127,45 @@ def _check_pieces(pieces: Any, ids: Sequence[int], source: str) -> Sequence[str 
             "sequence of token IDs and return one piece per ID, in the same order."
         )
     return pieces
+
+
+def encode_text(tokenizer: object, text: str) -> list[int]:
+    """Tokenize text to IDs for detection.
+
+    Special tokens are suppressed where the tokenizer supports it: they were never
+    produced by the model, and letting them into the sequence shifts every context window
+    by one, which changes every greenlist.
+    """
+    encoder = getattr(tokenizer, "encode", None)
+    if not callable(encoder):
+        raise TokenizerInterfaceError(
+            f"{type(tokenizer).__name__} has no encode() method, so text cannot be "
+            "tokenized. Pass token IDs directly, or use a tokenizer that can encode."
+        )
+    try:
+        ids = encoder(text, add_special_tokens=False)
+    except TypeError:
+        ids = encoder(text)
+    return _flatten_ids(ids)
+
+
+def _flatten_ids(ids: Any) -> list[int]:
+    """Normalize whatever the tokenizer returned into a flat list of ints."""
+    listed = ids.tolist() if hasattr(ids, "tolist") else list(ids)
+    while listed and isinstance(listed[0], list):
+        if len(listed) != 1:
+            raise TokenizerInterfaceError(
+                f"encode() returned {len(listed)} sequences; detection scores one at a time."
+            )
+        listed = listed[0]
+    return [int(value) for value in listed]
+
+
+def piece_text(piece: str | bytes) -> str:
+    """A displayable form of a token piece, for the per-token detection records."""
+    if isinstance(piece, str):
+        return piece
+    return bytes(piece).decode("utf-8", errors="replace")
 
 
 def _piece_bytes(piece: str | bytes) -> bytes:

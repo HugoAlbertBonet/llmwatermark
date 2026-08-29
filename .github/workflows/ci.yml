@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: core tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the package and its dev tooling
+        run: uv pip install --system -e ".[dev]"
+
+      # Backend-marked tests stay skipped: CI has no accelerators.
+      - name: Core tests
+        run: pytest
+
+  torch-agreement:
+    name: numpy and torch produce identical greenlists
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the package, dev tooling and CPU-only torch
+        run: |
+          uv pip install --system -e ".[dev]"
+          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
+
+      # The cross-backend promise rests on these being bit-identical.
+      - name: Greenlist agreement tests
+        run: pytest --backend torch tests/test_greenlist.py
+
+  quality:
+    name: lint, format and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the package and its dev tooling
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Type-check
+        run: mypy
+
+  dependency-policy:
+    name: core install pulls numpy only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the core package with no extras
+        run: uv pip install --system .
+
+      - name: Assert no backend or plotting dependency was installed
+        run: |
+          python - <<'PY'
+          import importlib.util, sys
+          forbidden = ["torch", "transformers", "vllm", "matplotlib"]
+          found = [m for m in forbidden if importlib.util.find_spec(m) is not None]
+          if found:
+              sys.exit(f"core install pulled forbidden dependencies: {found}")
+          import llmwatermark
+          print("core import OK:", llmwatermark.__version__)
+          PY

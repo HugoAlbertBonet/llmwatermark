@@ -50,6 +50,26 @@ jobs:
       - name: Greenlist agreement tests
         run: pytest --backend torch tests/test_greenlist.py
 
+  transformers-adapter:
+    name: transformers adapter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the package with CPU-only torch and transformers
+        run: |
+          uv pip install --system -e ".[dev]"
+          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system transformers
+
+      # Models are built from a config, never downloaded, so this needs no network.
+      - name: Adapter tests
+        run: pytest --backend transformers tests/test_adapter_transformers.py
+
   quality:
     name: lint, format and types
     runs-on: ubuntu-latest

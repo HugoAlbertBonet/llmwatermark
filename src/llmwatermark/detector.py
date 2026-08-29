@@ -33,6 +33,7 @@ from typing import Any, Final
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
+from llmwatermark import render
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.errors import DetectionError, SeedingError
 from llmwatermark.greenlist import is_green
@@ -112,6 +113,22 @@ class DetectionResult:
     @property
     def skipped_count(self) -> int:
         return self.total_tokens - self.scored_count
+
+    def summary(self) -> str:
+        """The verdict and the evidence behind it, as one short paragraph."""
+        return render.summary(self)
+
+    def to_ansi(self, *, color: bool = True) -> str:
+        """The per-token decision as a colored stream for a terminal."""
+        return render.to_ansi(self, color=color)
+
+    def to_html(self, *, full_document: bool = False) -> str:
+        """The per-token decision as self-contained HTML, with hover detail."""
+        return render.to_html(self, full_document=full_document)
+
+    def _repr_html_(self) -> str:
+        """Render automatically in a Jupyter notebook."""
+        return self.to_html()
 
     def __repr__(self) -> str:
         verdict = "watermarked" if self.is_watermarked else "not watermarked"

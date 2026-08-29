@@ -28,6 +28,14 @@ class HFStyleTokenizer:
     def convert_ids_to_tokens(self, ids: Sequence[int]) -> list[str]:
         return [self._pieces[index] for index in ids]
 
+    def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
+        """Whitespace round trip, so detection can be tested from text as well as IDs."""
+        lookup = {piece: index for index, piece in enumerate(self._pieces)}
+        return [lookup[piece] for piece in text.split()]
+
+    def decode(self, ids: Sequence[int]) -> str:
+        return " ".join(self._pieces[index] for index in ids)
+
 
 class ExLlamaStyleTokenizer:
     """Mimics ExLlamaV2: one call returning the whole id -> piece list."""

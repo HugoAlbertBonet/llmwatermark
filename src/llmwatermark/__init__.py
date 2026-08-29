@@ -13,8 +13,17 @@ from llmwatermark.config import (
     WatermarkConfig,
     generate_secret_key,
 )
+from llmwatermark.detector import (
+    DEFAULT_Z_THRESHOLD,
+    MIN_SCORED_TOKENS,
+    DetectionResult,
+    TokenRecord,
+    WatermarkDetector,
+    detect,
+)
 from llmwatermark.errors import (
     ConfigError,
+    DetectionError,
     LLMWatermarkError,
     SeedingError,
     TokenizerInterfaceError,
@@ -28,16 +37,23 @@ __version__ = "0.1.0.dev0"
 __all__ = [
     "DEFAULT_DELTA",
     "DEFAULT_GAMMA",
+    "DEFAULT_Z_THRESHOLD",
+    "MIN_SCORED_TOKENS",
     "ConfigError",
+    "DetectionError",
+    "DetectionResult",
     "HashScheme",
     "LLMWatermarkError",
     "MixWidth",
     "SeedingError",
+    "TokenRecord",
     "TokenizerInterfaceError",
     "VocabMismatchError",
     "WatermarkConfig",
+    "WatermarkDetector",
     "WatermarkProcessor",
     "__version__",
+    "detect",
     "fingerprint_from_tokenizer",
     "generate_secret_key",
 ]

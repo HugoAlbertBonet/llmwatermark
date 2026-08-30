@@ -34,3 +34,9 @@ examples/output/
 
 # Local scratch
 AGENTS.md.bak
+AGENTS.md
+
+# Evaluation artefacts (regenerate with tests/benchmarks/eval/)
+tests/benchmarks/eval/generations.jsonl
+tests/benchmarks/eval/chunks/
+tests/benchmarks/eval/verdicts_*.jsonl

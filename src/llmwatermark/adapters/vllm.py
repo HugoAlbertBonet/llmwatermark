@@ -34,6 +34,16 @@ matches the delta-before-warpers contract and the transformers adapter. Declarin
 would move it after temperature *and* skip it entirely for greedy requests - which would
 silently leave every greedy request unwatermarked.
 
+**Where delta lands in vLLM's sampler**, measured on 0.28.0::
+
+    apply_bad_words(...)                    # masks to -inf; survives delta, since -inf + d
+    for p in logitsprocs.non_argmax_invariant:
+        logits = p.apply(logits)            # <- the watermark
+    logits = apply_penalties(...)           # frequency / presence / repetition
+
+So delta reaches the logits before vLLM's penalties, the same relative position the
+transformers adapter takes by inserting at index 0. Tokens already banned stay banned.
+
 **The first h generated tokens.** Because vLLM usually passes ``prompt_token_ids=None``,
 a request's context window is filled from its own output alone, so the first h generated
 tokens receive no bias. transformers seeds those from the tail of the prompt instead. This

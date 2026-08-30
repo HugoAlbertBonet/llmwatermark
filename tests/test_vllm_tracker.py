@@ -65,6 +65,13 @@ class TestAddingAndReading:
         assert valid.tolist() == [False, True]
         assert context[0].tolist() == [0, 0, 0]
 
+    def test_a_missing_prompt_is_treated_as_no_history(self, tracker: RequestTracker) -> None:
+        """vLLM passes prompt_tok_ids=None unless something else asked it to materialize
+        them, so a request's context is filled from its own output alone."""
+        tracker.apply(batch_size=1, added=[(0, None, [7])])
+        assert tracker.contexts(2)[1].tolist() == [False]
+        assert tracker.contexts(1)[0].tolist() == [[7]]
+
     def test_an_empty_row_is_invalid(self, tracker: RequestTracker) -> None:
         tracker.apply(batch_size=2, added=[added(1, [1, 2, 3], [4])])
         _, valid = tracker.contexts(2)

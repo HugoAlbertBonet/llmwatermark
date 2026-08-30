@@ -88,6 +88,11 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+# The benchmark scripts insert their own directory on sys.path before importing the shared
+# harness, which is what E402 exists to catch and is deliberate here.
+[tool.ruff.lint.per-file-ignores]
+"tests/benchmarks/*" = ["E402"]
+
 [tool.mypy]
 # No python_version pin: numpy's shipped stubs use 3.12 syntax, which mypy refuses to
 # parse when told to target 3.10. Runtime 3.10 compatibility is enforced by the test

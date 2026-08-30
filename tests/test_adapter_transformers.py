@@ -422,3 +422,52 @@ class TestQualityEffects:
             rates.append(raw_green_fraction(config, generated))
         assert rates[0] < rates[1] < rates[2]
         assert np.isclose(rates[0], 0.25, atol=0.12)
+
+
+@pytest.mark.requires_cuda
+class TestHotPathContract:
+    """The performance contract at the adapter level, on the device.
+
+    M4 asserts these for the processor called directly. Here they are asserted for the
+    adapter's own call path - the input_ids slice included - which is what actually runs
+    inside generate().
+    """
+
+    @staticmethod
+    def _installed(config: WatermarkConfig) -> tuple[object, object, object]:
+        import torch
+
+        from llmwatermark.adapters.transformers import WatermarkLogitsProcessor
+
+        processor = WatermarkLogitsProcessor(config)
+        input_ids = torch.full((8, 64), 7, device="cuda")
+        scores = torch.zeros(8, VOCAB_SIZE, device="cuda")
+        processor(input_ids, scores)  # warm up: build tables and compile
+        return processor, input_ids, scores
+
+    def test_the_adapter_call_path_never_synchronises(self, config: WatermarkConfig) -> None:
+        """A sync per decode step would cost more than the watermark itself."""
+        import torch
+
+        processor, input_ids, scores = self._installed(config)
+        torch.cuda.synchronize()
+        torch.cuda.set_sync_debug_mode("error")
+        try:
+            processor(input_ids, scores)
+        finally:
+            torch.cuda.set_sync_debug_mode("default")
+
+    def test_no_batch_by_vocabulary_float_temporary_per_step(self, config: WatermarkConfig) -> None:
+        import torch
+
+        processor, input_ids, scores = self._installed(config)
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats()
+        before = torch.cuda.memory_allocated()
+        processor(input_ids, scores)
+        torch.cuda.synchronize()
+        peak = torch.cuda.max_memory_allocated() - before
+        full_temporary = 8 * VOCAB_SIZE * 4
+        assert peak < full_temporary, (
+            f"allocated {peak} bytes, a float temporary is {full_temporary}"
+        )

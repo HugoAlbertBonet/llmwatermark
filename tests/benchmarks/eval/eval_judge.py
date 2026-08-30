@@ -64,17 +64,34 @@ REASON: <one sentence, under 25 words>"""
 
 
 def export(arguments: argparse.Namespace) -> None:
+    """Write the blinded pairs.
+
+    Model-against-model comparisons ask what the watermark costs relative to the same model
+    unwatermarked. The optional human comparisons ask a different and more end-user
+    question: does watermarking change how the model fares against a person?
+
+    Those human rows carry a heavy confound - Dolly answers are terse where the model is
+    long and structured, and judges reward structure - so the absolute win rate against
+    human text says little. The *difference* between the human-vs-delta-0 row and the
+    human-vs-delta-N rows is the informative part, since both share the confound.
+    """
     rows = [json.loads(line) for line in Path(arguments.generations).read_text().splitlines()]
-    comparisons = [("control", "control")] + [
-        (f"delta_{value:g}", f"delta_{value:g}") for value in arguments.deltas
-    ]
+    comparisons: list[tuple[str, str, str]] = [("control", "delta_0", "control")]
+    comparisons += [(f"delta_{v:g}", "delta_0", f"delta_{v:g}") for v in arguments.deltas]
+    if arguments.include_human:
+        comparisons += [("human_vs_delta_0", "human", "delta_0")]
+        comparisons += [
+            (f"human_vs_delta_{v:g}", "human", f"delta_{v:g}") for v in arguments.deltas
+        ]
+
     generator = random.Random(arguments.seed)
     pairs = []
     for index, row in enumerate(rows[: arguments.limit]):
-        for label, arm in comparisons:
-            if arm not in row:
+        for label, baseline_arm, arm in comparisons:
+            if arm not in row or baseline_arm not in row:
                 continue
-            baseline, treatment = row["delta_0"]["text"], row[arm]["text"]
+            baseline = row[baseline_arm] if baseline_arm == "human" else row[baseline_arm]["text"]
+            treatment = row[arm]["text"]
             if not baseline.strip() or not treatment.strip():
                 continue
             # Each pair twice, sides swapped: disagreement between the two is position bias.
@@ -263,6 +280,7 @@ def main() -> None:
     exporter.add_argument("--deltas", type=float, nargs="*", default=[2.0, 4.0])
     exporter.add_argument("--limit", type=int, default=60)
     exporter.add_argument("--seed", type=int, default=0)
+    exporter.add_argument("--include-human", action="store_true")
     exporter.set_defaults(handler=export)
 
     api = sub.add_parser("judge")

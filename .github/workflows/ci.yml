@@ -70,6 +70,9 @@ jobs:
       - name: Adapter tests
         run: pytest --backend transformers tests/test_adapter_transformers.py
 
+  # The vLLM adapter's row bookkeeping runs in the core suite above; the engine tests
+  # themselves need a GPU and are marked requires_vllm, so they stay skipped here.
+
   quality:
     name: lint, format and types
     runs-on: ubuntu-latest

@@ -134,18 +134,34 @@ at all, against an explicit instruction that ties were expected.
 
 Perplexity agrees independently: 1.44x at delta = 2, still under human text.
 
-### What is not compared here
+### Against human writing
 
-Every pairwise comparison above is **model against model** - watermarked against the same
-model unwatermarked. None of them involves the human reference answer, so these numbers say
-what the watermark costs relative to the model's own baseline, not whether watermarked
-output is worse than a person's.
+The comparisons above are model against model, which measures the watermark's cost relative
+to the model's own baseline. A separate 480-pair run (GPT-5.6 Sol, medium, 240 comparisons,
+89.2% agreement, control exactly 16-16) anchors the same question against human answers.
+Win rates are for the *model*:
 
-`eval_judge.py export --include-human` adds that: human against delta = 0, delta = 2 and
-delta = 4. The absolute win rates there will be dominated by a confound - Dolly's human
-answers are terse where the model is long and structured, and judges reward structure - so
-the informative quantity is the *difference* between the human-vs-delta-0 row and the
-human-vs-delta-N rows, which share that confound. Not yet run.
+| comparison | model win rate | 95% CI |
+|---|---|---|
+| human vs delta = 0 | 13.9% | 6.1 - 28.7 |
+| human vs delta = 2 | 15.8% | 7.4 - 30.4 |
+| human vs delta = 4 | 5.3% | 1.5 - 17.3 |
+
+delta = 0 and delta = 2 are indistinguishable against a fixed external reference; delta = 4
+falls away from it. That is the same cliff the model-against-model rows and the perplexity
+scores find, now measured against human writing rather than the model's own output.
+
+Two things worth recording. This document previously predicted that judges would favour the
+model's long, structured answers over Dolly's terse human ones, and warned that the
+confound would make these rows hard to read. **The opposite happened** - human answers win
+86% of the time - so the prediction was wrong in direction, and the rows are more
+interpretable than claimed. The judging prompt for this run also added an explicit
+instruction not to reward length, structure or formatting in themselves, which may account
+for some of it.
+
+And the generator loses to human answers 86% of the time *even unwatermarked*.
+Qwen2.5-1.5B-Instruct is a small model with narrow quality headroom; a stronger model has
+more acceptable next tokens at each step and may tolerate delta differently.
 
 ## Guidance
 

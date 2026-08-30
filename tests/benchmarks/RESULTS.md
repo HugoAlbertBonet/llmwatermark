@@ -51,33 +51,55 @@ own resolution.
 
 ### Qwen2.5-1.5B-Instruct, vLLM, batch 32, 128 new tokens
 
+Each row changes one thing from the row above it.
+
 | configuration | baseline | watermarked | tok/s off | tok/s on | overhead | noise |
 |---|---|---|---|---|---|---|
-| eager, pageable copy | 2087 ms | 2485 ms | 1963 | 1648 | +19.08% | 3.00% |
-| compiled, pageable copy | 2001 ms | 2316 ms | 2047 | 1769 | +15.71% | 1.90% |
-| compiled, pinned async copy | 1972 ms | 2141 ms | 2077 | 1913 | **+8.60%** | 2.38% |
+| eager kernel, pageable copy, no CUDA graphs | 2087 ms | 2485 ms | 1963 | 1648 | +19.08% | 3.00% |
+| compiled kernel | 2001 ms | 2316 ms | 2047 | 1769 | +15.71% | 1.90% |
+| pinned async copy | 1972 ms | 2141 ms | 2077 | 1913 | +8.60% | 2.38% |
+| CUDA graphs (vLLM's default) | 1508 ms | 1587 ms | 2716 | 2581 | **+5.22%** | 0.91% |
 
-**vLLM does not meet the 2% budget.** It is over by four times, and this is the one
-place the project misses its own target.
+**vLLM is at 5.22% against a 2% budget** - still over, and the one place the project
+misses its own target, but 3.7x better than where the milestone started.
 
-Two of the three points are understood. Compilation is worth 3.4 points, and the vLLM
-tests had been passing `compile=False` - a default chosen defensively in M8 without
-measuring, and wrong. Staging the context through reusable pinned buffers is worth a
-further 7.1 points: the transformers adapter slices its context from a device tensor,
-while vLLM has to assemble it on the host and copy it every step, and a pageable copy is
-*blocking*. In isolation that copy costs 27 microseconds; inside a pipelined sampler it
-drains the queue once per decode step, and the bubble is measured in milliseconds. An
-idle-GPU microbenchmark cannot see this, and initially told us the host path was
-irrelevant.
+Three of the four points recovered came from configuration or integration mistakes, all of
+them defaults chosen defensively without measuring:
 
-The remaining ~1.3 ms per step is **not explained**. Ruled out by measurement: the
-compiled kernel (~0.15 ms at this vocabulary), context assembly (11 us), pinned staging
-(17 us), and compilation failing to engage - the engine log confirms the kernel is
-compiled inside the engine process. The leading untested hypothesis is that
-`dynamic=True`, needed because vLLM's batch size varies between prefill and decode steps,
-produces a less well fused kernel than static shapes would. Resolving it needs a profiler
-trace from inside the engine subprocess, which the in-process instrumentation used here
-cannot reach.
+* **compile=False** in the M8 tests, inherited by the benchmark. Worth 3.4 points.
+* **A pageable host-to-device copy** of the context, every decode step. The transformers
+  adapter slices its context from a device tensor; vLLM must assemble it on the host, and
+  `torch.as_tensor(..., device=...)` from pageable memory *blocks*. That copy measures 27
+  microseconds on an idle GPU and drains the queue once per step inside a live engine.
+  Reusable pinned buffers with non-blocking copies: worth 7.1 points.
+* **enforce_eager=True** in the benchmark, set for faster engine startup. It disables CUDA
+  graphs, so vLLM launches every model kernel individually, the host becomes the
+  bottleneck, and our launches block waiting for queue space. Production does not run this
+  way. Worth 3.4 points.
+
+Measured from inside the engine process, using a timing subclass vLLM loads by import
+path:
+
+| | |
+|---|---|
+| `processor.apply`, in engine | 3231 us/call |
+| the same compiled kernel, same tensors, same process | **165 us** |
+| the same kernel, eager | 1574 us |
+| the same kernel, `dynamic=False` | 143 us |
+
+The kernel is 165 us; the call around it was blocking for 3231 us. That is host stalling,
+not GPU work, and it is what the CUDA-graphs row addresses.
+
+It also disproves what this document previously offered as the leading hypothesis - that
+`dynamic=True` produced a poorly fused kernel. Static shapes are worth 22 microseconds,
+not milliseconds.
+
+**What remains.** At 11.8 ms per step the 165 us kernel is 1.4%, and the logits read plus
+write it performs (38.9 MB at 291 GB/s = 0.134 ms) is very close to a bandwidth floor, so
+the kernel itself has little left to give. The measured 5.22% leaves roughly 0.45 ms per
+step above that floor, still unexplained, and now the largest known item in the project.
+A profiler trace from inside the engine subprocess is the next step rather than more
+hypotheses.
 
 ### facebook/opt-125m, transformers, 128 new tokens
 
@@ -159,8 +181,9 @@ Three measurement bugs were caught by these rules rather than shipped:
 
 ## Open
 
-- **vLLM is at 8.60% against a 2% budget.** The largest known gap in the project. The
-  residual is unexplained; see above for what has been ruled out.
+- **vLLM is at 5.22% against a 2% budget.** The largest known gap in the project, down
+  from 19.08%. Roughly 0.45 ms per step remains above the kernel's bandwidth floor and is
+  unexplained; see above for what has been ruled out by measurement.
 - **Speculative decoding is unmeasured.** The vLLM adapter refuses loudly if the row count
   disagrees with the tracker rather than biasing the wrong rows, but that path has not been
   exercised.

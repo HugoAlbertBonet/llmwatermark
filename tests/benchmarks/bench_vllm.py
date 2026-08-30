@@ -24,7 +24,9 @@ NEW_TOKENS = 128
 REPEATS = 8
 
 
-def throughput(model: str, batch: int, watermarked: bool, compile_mode: object) -> list[float]:
+def throughput(
+    model: str, batch: int, watermarked: bool, compile_mode: object, eager: bool = True
+) -> list[float]:
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
 
@@ -48,7 +50,7 @@ def throughput(model: str, batch: int, watermarked: bool, compile_mode: object) 
         model=model,
         gpu_memory_utilization=0.60,
         max_model_len=1024,
-        enforce_eager=True,
+        enforce_eager=eager,
         disable_log_stats=True,
         **extra,
     )
@@ -70,16 +72,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="facebook/opt-125m")
     parser.add_argument("--batch", type=int, default=32)
-    parser.add_argument("--compile", default="False")
+    parser.add_argument("--compile", default="auto")
+    parser.add_argument("--cuda-graphs", action="store_true")
     arguments = parser.parse_args()
 
     compile_mode: object = arguments.compile
     if arguments.compile in ("True", "False"):
         compile_mode = arguments.compile == "True"
 
-    print(f"model: {arguments.model}, batch {arguments.batch}, compile={compile_mode!r}")
-    baseline = throughput(arguments.model, arguments.batch, False, compile_mode)
-    treated = throughput(arguments.model, arguments.batch, True, compile_mode)
+    eager = not arguments.cuda_graphs
+    print(
+        f"model: {arguments.model}, batch {arguments.batch}, compile={compile_mode!r}, "
+        f"enforce_eager={eager}"
+    )
+    baseline = throughput(arguments.model, arguments.batch, False, compile_mode, eager)
+    treated = throughput(arguments.model, arguments.batch, True, compile_mode, eager)
 
     off, on = statistics.median(baseline), statistics.median(treated)
     noise = max(statistics.pstdev(baseline), statistics.pstdev(treated)) / off * 100

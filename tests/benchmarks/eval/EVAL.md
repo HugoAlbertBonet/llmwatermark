@@ -98,21 +98,31 @@ comparison are not independent observations, and counting both would halve the i
 on no extra information. Comparisons whose two orderings disagree are dropped as
 unresolved, which is what the agreement rate below measures.
 
+All judging was run on 2026-08-29. The two external judges were driven through the Codex
+CLI over the chunked export; Claude Opus 5 judged a 16-comparison subset inline.
+
 | judge | comparisons | order-swapped agreement | control | delta = 2 | delta = 4 |
 |---|---|---|---|---|---|
 | Claude Opus 5 | 16 | 100% | 50.0% | 40.0% [11.8-76.9] | 0.0% [0.0-49.0] |
-| judge A *(model to be recorded)* | 119 | 78.2% | 46.4% | 24.2% [12.8-41.0] | 18.8% [8.9-35.3] |
-| judge B *(model to be recorded)* | 120 | **94.2%** | 58.3% | 43.2% [28.7-59.1] | 15.8% [7.4-30.4] |
+| GPT-5.6 Luna (high) | 119 | 78.2% | 46.4% | 24.2% [12.8-41.0] | 18.8% [8.9-35.3] |
+| **GPT-5.6 Sol (medium)** | 120 | **94.2%** | 58.3% | 43.2% [28.7-59.1] | 15.8% [7.4-30.4] |
 
 All three controls straddle 50%, so all three are admissible.
+
+Worth noting for anyone repeating this: the higher-effort configuration was *less*
+self-consistent, not more. Luna at high effort flipped its verdict on 22% of comparisons
+when the sides were swapped; Sol at medium effort flipped on 6%. Reasoning effort is not a
+proxy for judge reliability, which is the argument for measuring self-consistency directly
+rather than assuming the stronger setting is the better instrument.
 
 **delta = 4 degrades quality, robustly.** Three independent judges, win rates 0%, 18.8% and
 15.8%, every upper bound below 50%. Perplexity says the same thing at 4.38x.
 
-**delta = 2 shows no detectable degradation** in the two high-consistency runs. The only run
-that found a cost at delta = 2 is the one that agreed with itself 78.2% of the time, where
-22% of comparisons flipped on a side swap. Self-consistency is the tie-breaker here, and
-the ~80% bar was set before these results were seen, not after.
+**delta = 2 shows no detectable degradation** in the two high-consistency runs (Claude Opus
+5 at 100%, GPT-5.6 Sol at 94.2%). The only run that found a cost at delta = 2 is GPT-5.6
+Luna at 78.2%, where 22% of comparisons flipped on a side swap. Self-consistency is the
+tie-breaker here, and the ~80% bar was set before any of these results were seen, not
+after.
 
 Perplexity agrees independently: 1.44x at delta = 2, still under human text.
 
@@ -132,7 +142,7 @@ Perplexity agrees independently: 1.44x at delta = 2, still under human text.
   should tolerate delta better. Treat these as pessimistic for production models.
 - **256-token answers.** Detection power grows as sqrt(length), so shorter passages need a
   larger delta or a lower threshold, and both cost something.
-- **Judges rarely tie.** Two ties in 120 comparisons for judge B, none for judge A, against
+- **Judges rarely tie.** Two ties in 120 comparisons for Sol, none for Luna, against
   an explicit instruction that ties were expected. Forced discrimination inflates apparent
   differences - though it inflates them for the control row too, which stayed at 50%.
 - **English only**, single-turn instructions, one dataset.

@@ -108,10 +108,12 @@ All judging was run on 2026-08-29, driven through the Codex CLI over the chunked
 
 All three controls straddle 50%, so all three are admissible.
 
-**Weight the Sol row most.** Claude Opus 5 wrote this harness, chose the metrics and drew
-the conclusions; its own verdicts agreeing with those conclusions is the least independent
-evidence in the table, however self-consistent they are. Sol is the strongest independent
-instrument here, and it is the one that carries the delta = 2 result.
+Every run was blinded and executed in a fresh session with no knowledge of the project,
+the hypothesis, or which side carried the watermark, so no judge's verdicts were shaped by
+the conclusions drawn here. What the runs *do* share is the harness: Claude Opus 5 chose
+what gets compared, what counts as resolved and how ties are broken. That design shapes all
+four rows equally rather than any one of them specially, and it is the part a sceptical
+reader should scrutinise.
 
 Two observations for anyone repeating this. The higher-effort configuration was *less*
 self-consistent: Luna at high effort flipped its verdict on 22% of comparisons when the
@@ -131,6 +133,19 @@ at all, against an explicit instruction that ties were expected.
 ~80% bar was set before any of these results were seen, not after.
 
 Perplexity agrees independently: 1.44x at delta = 2, still under human text.
+
+### What is not compared here
+
+Every pairwise comparison above is **model against model** - watermarked against the same
+model unwatermarked. None of them involves the human reference answer, so these numbers say
+what the watermark costs relative to the model's own baseline, not whether watermarked
+output is worse than a person's.
+
+`eval_judge.py export --include-human` adds that: human against delta = 0, delta = 2 and
+delta = 4. The absolute win rates there will be dominated by a confound - Dolly's human
+answers are terse where the model is long and structured, and judges reward structure - so
+the informative quantity is the *difference* between the human-vs-delta-0 row and the
+human-vs-delta-N rows, which share that confound. Not yet run.
 
 ## Guidance
 

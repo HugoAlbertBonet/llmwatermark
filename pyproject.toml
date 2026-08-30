@@ -34,6 +34,8 @@ dependencies = ["numpy>=1.22"]
 transformers = ["transformers>=4.40", "torch>=2.1"]
 vllm = ["vllm>=0.8"]
 viz = ["matplotlib>=3.7"]
+# Quality and detector evaluation only; not needed to use the library.
+eval = ["datasets>=2.14"]
 dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11"]
 
 [project.urls]

@@ -36,8 +36,8 @@ VOCAB_SIZES = [1, 2, 7, 255, 256, 257, 512, 128000, 128256]
 # format. Changing them invalidates every config ever issued, so they are hardcoded and
 # any drift must be a deliberate, documented format bump (see FINGERPRINT_DOMAIN).
 GOLDEN_FINGERPRINTS = {
-    512: "527307761e39dd314ce40ea32c469de4c4c8f7c7cf48dd84661b30a54ad5ec75",
-    128256: "c18cb10f4b382be38bd6effea384882d51594224fbbbba834bcd9cb96f3fc1e9",
+    512: "fa6b39fb0f7839fd9b049b015d8e8e275523c5bd1867a9319029a63e8a3846bc",
+    128256: "abf836940f83439cf7156f1c4e28ef4913763b530b74673e16422a1651e1446f",
 }
 
 
@@ -68,6 +68,11 @@ class TestFingerprintSampleIds:
         with pytest.raises(ValueError, match="vocab_size"):
             fingerprint_sample_ids(vocab_size)
 
+    @pytest.mark.parametrize("vocab_size", [0, -1])
+    def test_the_fingerprint_rejects_a_non_positive_vocab_size(self, vocab_size: int) -> None:
+        with pytest.raises(ValueError, match="vocab_size"):
+            fingerprint_from_tokenizer(HFStyleTokenizer(make_pieces(8)), vocab_size)
+
 
 class TestFingerprintFormat:
     def test_matches_the_documented_byte_layout(self, tokenizer: HFStyleTokenizer) -> None:
@@ -77,6 +82,7 @@ class TestFingerprintFormat:
         digest = hashlib.sha256()
         digest.update(FINGERPRINT_DOMAIN)
         digest.update(vocab_size.to_bytes(8, "big"))
+        digest.update(vocab_size.to_bytes(8, "big"))  # span: this tokenizer is not padded
         digest.update(len(ids).to_bytes(4, "big"))
         for token_id in ids:
             piece = tokenizer.convert_ids_to_tokens([token_id])[0].encode("utf-8")
@@ -187,7 +193,21 @@ class TestTokenizerInterfaces:
         with pytest.raises(TokenizerInterfaceError, match="sequence"):
             fingerprint_from_tokenizer(lambda token_id: f"tok{token_id}", 8)
 
-    def test_tokenizer_smaller_than_declared_vocab_size_is_reported_clearly(self) -> None:
-        """Sampling ID 511 from a 256-piece tokenizer must not surface as a raw IndexError."""
-        with pytest.raises(ValueError, match="512"):
-            fingerprint_from_tokenizer(HFStyleTokenizer(make_pieces(256)), 512)
+    def test_a_padded_vocabulary_is_supported(self) -> None:
+        """Real models pad: OPT-125m generates over 50272 IDs from 50265 pieces.
+
+        Sampling is bounded by the tokenizer so no missing piece is ever requested, while
+        vocab_size still enters the digest in its own right.
+        """
+        tokenizer = HFStyleTokenizer(make_pieces(256))
+        padded = fingerprint_from_tokenizer(tokenizer, 300)
+        assert len(padded) == 64
+        assert padded != fingerprint_from_tokenizer(tokenizer, 256)
+        assert padded != fingerprint_from_tokenizer(tokenizer, 301)
+
+    def test_the_declared_size_is_hashed_even_when_sampling_is_capped(self) -> None:
+        """Two padded configurations over one tokenizer must not collide."""
+        tokenizer = HFStyleTokenizer(make_pieces(128000))
+        assert fingerprint_from_tokenizer(tokenizer, 128000) != fingerprint_from_tokenizer(
+            tokenizer, 128256
+        )

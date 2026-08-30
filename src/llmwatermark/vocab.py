@@ -33,7 +33,7 @@ __all__ = [
 # Domain separation: this digest must never collide with another use of sha256 here.
 # Bump the suffix only alongside a deliberate, documented format change - doing so
 # invalidates every config issued so far.
-FINGERPRINT_DOMAIN: Final[bytes] = b"llmwatermark/vocab-fingerprint/v1"
+FINGERPRINT_DOMAIN: Final[bytes] = b"llmwatermark/vocab-fingerprint/v2"
 
 # Wide enough to catch a different tokenizer, small enough to be free to compute.
 FINGERPRINT_SAMPLE_SIZE: Final[int] = 256
@@ -43,21 +43,25 @@ FINGERPRINT_SAMPLE_SIZE: Final[int] = 256
 IdToPiece = Callable[[Sequence[int]], Sequence[str | bytes]]
 
 
-def fingerprint_sample_ids(vocab_size: int) -> list[int]:
-    """The token IDs the fingerprint is computed over.
+def fingerprint_sample_ids(span: int) -> list[int]:
+    """The token IDs the fingerprint is computed over, across ``span`` IDs.
 
-    A pure function of ``vocab_size`` - no RNG - so two machines sample identically.
-    Both boundaries are always included: ID 0 and ID ``vocab_size - 1``. The last ID is
-    what makes a padded embedding matrix distinguishable from a real tokenizer.
+    A pure function of ``span`` - no RNG - so two machines sample identically. Both
+    boundaries are always included: ID 0 and ID ``span - 1``.
+
+    ``span`` is the number of IDs the *tokenizer* can map, which for a padded model is
+    smaller than the declared ``vocab_size``. The declared size is folded into the digest
+    separately, so a padded and an unpadded configuration still fingerprint differently
+    without asking the tokenizer for pieces it does not have.
     """
-    if vocab_size < 1:
-        raise VocabMismatchError(f"vocab_size must be a positive integer, got {vocab_size}.")
+    if span < 1:
+        raise VocabMismatchError(f"vocab_size must be a positive integer, got {span}.")
 
-    count = min(vocab_size, FINGERPRINT_SAMPLE_SIZE)
+    count = min(span, FINGERPRINT_SAMPLE_SIZE)
     if count == 1:
         return [0]
     # Evenly spaced in integer arithmetic, so the spacing cannot drift with float width.
-    return sorted({(index * (vocab_size - 1)) // (count - 1) for index in range(count)})
+    return sorted({(index * (span - 1)) // (count - 1) for index in range(count)})
 
 
 def observed_vocab_size(tokenizer: object) -> int | None:
@@ -184,7 +188,8 @@ def fingerprint_from_tokenizer(tokenizer: object, vocab_size: int) -> str:
 
         sha256(
             FINGERPRINT_DOMAIN
-            || uint64_be(vocab_size)
+            || uint64_be(vocab_size)       # what the model generates over
+            || uint64_be(span)             # how many IDs the tokenizer can map
             || uint32_be(number of sampled IDs)
             || for each sampled ID, ascending:
                    uint32_be(token_id)
@@ -194,18 +199,21 @@ def fingerprint_from_tokenizer(tokenizer: object, vocab_size: int) -> str:
 
     Every field is length-prefixed so that two different vocabularies cannot serialize to
     the same byte string (``("ab", "c")`` must not collide with ``("a", "bc")``).
+
+    Models pad the embedding matrix past the real tokenizer, so ``vocab_size`` is
+    routinely larger than the number of pieces the tokenizer can produce - OPT-125m
+    generates over 50272 IDs from 50265 pieces, Llama-3 over 128256 from 128000. Sampling
+    is therefore bounded by the tokenizer, while ``vocab_size`` enters the digest as a
+    field of its own: partitioning 128000 IDs still fingerprints differently from
+    partitioning 128256, and no piece is ever requested that does not exist.
     """
-    ids = fingerprint_sample_ids(vocab_size)
+    if vocab_size < 1:
+        raise VocabMismatchError(f"vocab_size must be a positive integer, got {vocab_size}.")
     id_to_piece = resolve_id_to_piece(tokenizer)
 
     observed = observed_vocab_size(tokenizer)
-    if observed is not None and observed < vocab_size:
-        raise VocabMismatchError(
-            f"declared vocab_size={vocab_size} but this tokenizer exposes only {observed} "
-            "tokens. Pass the vocab_size the text was generated with - for a padded model "
-            "that is config.vocab_size, which can exceed len(tokenizer) - or pass the "
-            "tokenizer that matches the watermark."
-        )
+    span = vocab_size if observed is None else min(vocab_size, observed)
+    ids = fingerprint_sample_ids(span)
 
     try:
         pieces = id_to_piece(ids)
@@ -219,6 +227,7 @@ def fingerprint_from_tokenizer(tokenizer: object, vocab_size: int) -> str:
     digest = hashlib.sha256()
     digest.update(FINGERPRINT_DOMAIN)
     digest.update(vocab_size.to_bytes(8, "big"))
+    digest.update(span.to_bytes(8, "big"))
     digest.update(len(ids).to_bytes(4, "big"))
     for token_id, piece in zip(ids, pieces, strict=True):
         raw = _piece_bytes(piece)

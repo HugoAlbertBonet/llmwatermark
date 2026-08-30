@@ -99,5 +99,5 @@ warn_unreachable = true
 # Backend libraries are optional extras, imported lazily inside the adapters that need
 # them. The quality job installs none of them, so their absence must not be an error.
 [[tool.mypy.overrides]]
-module = ["numpy.*", "torch.*", "transformers.*"]
+module = ["numpy.*", "torch.*", "transformers.*", "vllm.*"]
 ignore_missing_imports = true

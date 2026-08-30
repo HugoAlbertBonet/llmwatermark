@@ -116,6 +116,7 @@ class WatermarkLogitsProcessor(LogitsProcessor):  # type: ignore[misc]
         self.device = device
         self.processor = WatermarkProcessor(config, compile=_compile_mode_from(vllm_config))
         self.tracker = RequestTracker()
+        self._buffers: tuple[Any, Any, Any, Any] | None = None
         _check_vocabulary(vllm_config, config)
 
     def is_argmax_invariant(self) -> bool:
@@ -154,15 +155,46 @@ class WatermarkLogitsProcessor(LogitsProcessor):  # type: ignore[misc]
         context, valid = self.tracker.contexts(self.config.h)
         if not valid.any():
             return logits
+        device_context, device_valid = self._stage(context, valid, logits.device)
+        return self.processor.apply(logits, device_context, device_valid)
 
+    def _stage(self, context: Any, valid: Any, device: Any) -> tuple[Any, Any]:
+        """Move this step's context to the device without stalling the pipeline.
+
+        The context is assembled on the host, so it has to be copied every step. Handing
+        a pageable array straight to ``torch.as_tensor(..., device=...)`` makes that copy
+        *blocking*, which drains vLLM's queued GPU work once per decode step. The copy
+        itself is tens of microseconds; the bubble it opens is measured in milliseconds.
+
+        Staging through reusable pinned buffers keeps the copy asynchronous, and reusing
+        them means no allocation on the hot path either.
+        """
         import torch
 
-        device = logits.device
-        return self.processor.apply(
-            logits,
-            torch.as_tensor(context, device=device),
-            torch.as_tensor(valid, device=device),
-        )
+        rows, window = context.shape
+        buffers = self._buffers
+        if buffers is None or buffers[0].shape[0] < rows or buffers[0].shape[1] != window:
+            capacity = max(rows, 2 * (buffers[0].shape[0] if buffers else 0), 32)
+            try:
+                host_context = torch.empty((capacity, window), dtype=torch.int64, pin_memory=True)
+                host_valid = torch.empty(capacity, dtype=torch.bool, pin_memory=True)
+            except RuntimeError:  # pragma: no cover - pinned memory is not always available
+                host_context = torch.empty((capacity, window), dtype=torch.int64)
+                host_valid = torch.empty(capacity, dtype=torch.bool)
+            buffers = (
+                host_context,
+                host_valid,
+                torch.empty((capacity, window), dtype=torch.int64, device=device),
+                torch.empty(capacity, dtype=torch.bool, device=device),
+            )
+            self._buffers = buffers
+
+        host_context, host_valid, device_context, device_valid = buffers
+        host_context.numpy()[:rows] = context
+        host_valid.numpy()[:rows] = valid
+        device_context[:rows].copy_(host_context[:rows], non_blocking=True)
+        device_valid[:rows].copy_(host_valid[:rows], non_blocking=True)
+        return device_context[:rows], device_valid[:rows]
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.tracker!r})"

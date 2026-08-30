@@ -98,31 +98,37 @@ comparison are not independent observations, and counting both would halve the i
 on no extra information. Comparisons whose two orderings disagree are dropped as
 unresolved, which is what the agreement rate below measures.
 
-All judging was run on 2026-08-29. The two external judges were driven through the Codex
-CLI over the chunked export; Claude Opus 5 judged a 16-comparison subset inline.
+All judging was run on 2026-08-29, driven through the Codex CLI over the chunked export.
 
-| judge | comparisons | order-swapped agreement | control | delta = 2 | delta = 4 |
-|---|---|---|---|---|---|
-| Claude Opus 5 | 16 | 100% | 50.0% | 40.0% [11.8-76.9] | 0.0% [0.0-49.0] |
-| GPT-5.6 Luna (high) | 119 | 78.2% | 46.4% | 24.2% [12.8-41.0] | 18.8% [8.9-35.3] |
-| **GPT-5.6 Sol (medium)** | 120 | **94.2%** | 58.3% | 43.2% [28.7-59.1] | 15.8% [7.4-30.4] |
+| judge | comparisons | order-swapped agreement | ties | control | delta = 2 | delta = 4 |
+|---|---|---|---|---|---|---|
+| Claude Opus 5 (high) | 120 | **100%** | 17 | 65.5% [47.3-80.1] | 45.7% [30.5-61.8] | 5.1% [1.4-16.9] |
+| GPT-5.6 Luna (high) | 119 | 78.2% | 0 | 46.4% [29.5-64.2] | 24.2% [12.8-41.0] | 18.8% [8.9-35.3] |
+| **GPT-5.6 Sol (medium)** | 120 | 94.2% | 2 | 58.3% [42.2-72.9] | 43.2% [28.7-59.1] | 15.8% [7.4-30.4] |
 
 All three controls straddle 50%, so all three are admissible.
 
-Worth noting for anyone repeating this: the higher-effort configuration was *less*
-self-consistent, not more. Luna at high effort flipped its verdict on 22% of comparisons
-when the sides were swapped; Sol at medium effort flipped on 6%. Reasoning effort is not a
-proxy for judge reliability, which is the argument for measuring self-consistency directly
-rather than assuming the stronger setting is the better instrument.
+**Weight the Sol row most.** Claude Opus 5 wrote this harness, chose the metrics and drew
+the conclusions; its own verdicts agreeing with those conclusions is the least independent
+evidence in the table, however self-consistent they are. Sol is the strongest independent
+instrument here, and it is the one that carries the delta = 2 result.
 
-**delta = 4 degrades quality, robustly.** Three independent judges, win rates 0%, 18.8% and
-15.8%, every upper bound below 50%. Perplexity says the same thing at 4.38x.
+Two observations for anyone repeating this. The higher-effort configuration was *less*
+self-consistent: Luna at high effort flipped its verdict on 22% of comparisons when the
+sides were swapped, Sol at medium effort on 6%. Reasoning effort is not a proxy for judge
+reliability. And tie usage tracks reliability in the expected direction - Opus used TIE 17
+times, most often on control pairs (11) and least on delta = 4 (1), which is what a
+calibrated judge should do when the answers really are indistinguishable. Luna never tied
+at all, against an explicit instruction that ties were expected.
 
-**delta = 2 shows no detectable degradation** in the two high-consistency runs (Claude Opus
-5 at 100%, GPT-5.6 Sol at 94.2%). The only run that found a cost at delta = 2 is GPT-5.6
-Luna at 78.2%, where 22% of comparisons flipped on a side swap. Self-consistency is the
-tie-breaker here, and the ~80% bar was set before any of these results were seen, not
-after.
+**delta = 4 degrades quality, robustly.** Three judges over 240 comparisons each, win rates
+5.1%, 15.8% and 18.8%, every upper bound below 50%. Perplexity says the same thing at
+4.38x. This is the firmest result in the evaluation.
+
+**delta = 2 shows no detectable degradation** in the two high-consistency runs (Opus at
+100%, Sol at 94.2%). The only run that found a cost at delta = 2 is Luna at 78.2%, where
+22% of comparisons flipped on a side swap. Self-consistency is the tie-breaker, and the
+~80% bar was set before any of these results were seen, not after.
 
 Perplexity agrees independently: 1.44x at delta = 2, still under human text.
 
@@ -142,7 +148,11 @@ Perplexity agrees independently: 1.44x at delta = 2, still under human text.
   should tolerate delta better. Treat these as pessimistic for production models.
 - **256-token answers.** Detection power grows as sqrt(length), so shorter passages need a
   larger delta or a lower threshold, and both cost something.
-- **Judges rarely tie.** Two ties in 120 comparisons for Sol, none for Luna, against
-  an explicit instruction that ties were expected. Forced discrimination inflates apparent
-  differences - though it inflates them for the control row too, which stayed at 50%.
+- **Two of three judges rarely tie.** Two ties in 120 comparisons for Sol, none at all for
+  Luna, against an explicit instruction that ties were expected. Forced discrimination
+  inflates apparent differences - though it inflates them for the control row too, which
+  straddled 50% in every run.
+- **The control row leans high for two judges** (58.3% and 65.5%, both straddling 50% but
+  from above). Control pairs differ only by sampling seed, so there is nothing for a judge
+  to prefer; treat small effects in the delta rows with corresponding caution.
 - **English only**, single-turn instructions, one dataset.

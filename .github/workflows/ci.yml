@@ -95,6 +95,11 @@ jobs:
       - name: Type-check
         run: mypy
 
+      # The README is verified rather than asserted: its snippets must parse and the
+      # symbols they import must exist.
+      - name: README and examples
+        run: pytest tests/test_readme.py
+
   dependency-policy:
     name: core install pulls numpy only
     runs-on: ubuntu-latest

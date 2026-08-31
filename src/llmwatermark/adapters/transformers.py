@@ -61,6 +61,7 @@ from __future__ import annotations
 
 from typing import Any, NoReturn
 
+from llmwatermark.adapters.base import require_backend
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.processor import CompileMode, WatermarkProcessor
 
@@ -77,10 +78,7 @@ _PROCESSOR_ATTRIBUTE = "_llmwatermark_processor"
 
 
 def _require_transformers(error: BaseException | None = None) -> NoReturn:
-    raise ImportError(
-        "the transformers adapter needs the transformers package, which is an optional "
-        'extra. Install it with:\n\n    pip install "llmwatermark[transformers]"\n'
-    ) from error
+    require_backend("transformers", "transformers", error)
 
 
 try:

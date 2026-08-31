@@ -29,6 +29,7 @@ from typing import Any, Final, Literal
 from llmwatermark.arrays import is_torch
 from llmwatermark.config import HashScheme, MixWidth, WatermarkConfig
 from llmwatermark.errors import ConfigError, SeedingError
+from llmwatermark.fastpath import Scratch, green_mask_into
 from llmwatermark.greenlist import is_green, token_id_range
 from llmwatermark.seeding import (
     SeedTable,
@@ -75,6 +76,38 @@ def _biased(
     return adder(green, alpha=delta)
 
 
+def _biased_numpy(
+    logits: Any,
+    context: Any,
+    valid: Any,
+    table: Any,
+    ids: Any,
+    scheme: HashScheme,
+    divisor: int,
+    delta: float,
+    width: MixWidth,
+    scratch: Any,
+) -> Any:
+    """The same step for numpy, with the passes over memory counted.
+
+    numpy has no fusing compiler, so the generic kernel above costs roughly sixteen passes
+    over a ``batch x vocab_size`` array. This is the identical function written for that
+    cost model - see :mod:`llmwatermark.fastpath`, which also proves the masks match.
+    """
+    import numpy as np
+
+    seeds = gather_seeds(table, context, scheme)
+    green = green_mask_into(seeds, ids, divisor, width, scratch)
+    if valid is not None:
+        green &= valid[:, None]
+    # delta as a Python float would promote this bool array to float64 and then cast a
+    # full vocabulary of it back down, which measured four times the cost of staying in
+    # the logits' own dtype.
+    scale = logits.dtype.type(delta) if logits.dtype.kind == "f" else np.float32(delta)
+    logits += green * scale
+    return logits
+
+
 class WatermarkProcessor:
     """Applies one watermark's logit bias, on any array library and any device.
 
@@ -93,6 +126,7 @@ class WatermarkProcessor:
         self._table = SeedTable.for_config(config)
         self._compiled: Any = None
         self._compile_failed = False
+        self._scratch = Scratch()
 
     @property
     def compile_mode(self) -> str:
@@ -126,8 +160,7 @@ class WatermarkProcessor:
 
         table = self._table.on(logits)
         ids = token_id_range(self.config.vocab_size, self.config.mix_width, like=logits)
-        kernel = self._kernel_for(logits)
-        return kernel(
+        arguments = (
             logits,
             context,
             valid,
@@ -138,6 +171,9 @@ class WatermarkProcessor:
             self.config.delta,
             self.config.mix_width,
         )
+        if not is_torch(logits):
+            return _biased_numpy(*arguments, self._scratch)
+        return self._kernel_for(logits)(*arguments)
 
     def apply_to_histories(self, logits: Any, histories: Any) -> Any:
         """Apply the bias from ragged per-row token histories.

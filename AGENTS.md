@@ -184,6 +184,13 @@ Keep all the code well documented by using comments and a README.md file. The RE
 
 Include some demonstration scripts, plots, and animations for better understanding.
 
+After every phase is finished, HANDOFF.md must be updated as follows:
+- A summary about the most important aspects of the past conversations (Previous version of HANDOFF.md, session context...) in less than 500 words.
+- A list of critical things to consider in the following step
+- The plan for the next phase or milestone
+
+Each update overwrites the HANDOFF.md (keeping the most important information thanks to the above bulletpoints) so the document keeps a similar size after every milestone, instead of growing over time. If HANDOFF.md does not exist, then the update consists on creatign it.
+
 
 ## Usage
 

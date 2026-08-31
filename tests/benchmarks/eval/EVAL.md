@@ -50,6 +50,13 @@ summarization, classification).
 Had the null been wider than 1.0 here, every false-positive rate this project publishes
 would have been wrong.
 
+**Per-key offset.** Texts scored under one key share a single greenlist, so they are not
+independent and a per-key bias would not average away. Measured over 24 keys and 400 human
+texts each, the per-key mean z has sd 0.095 against 0.050 expected from sampling alone,
+implying a genuine per-key offset of sd ~0.08 (observed range -0.26 to +0.11). Marginally
+that widens the null from N(0, 1) to N(0, 1.003) and moves the false-positive rate at z = 4
+from 3.2e-05 to about 3.4e-05. Real, quantified, and not worth acting on.
+
 ## Detection power
 
 Positives are the watermarked arm; negatives are human text pooled with the unwatermarked

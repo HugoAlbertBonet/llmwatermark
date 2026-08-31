@@ -21,6 +21,8 @@ htmlcov/
 # Notebooks
 .ipynb_checkpoints/
 
+# Committed: docs/figures holds the rendered README figures
+
 # Models and generated assets
 *.gguf
 *.safetensors
@@ -33,6 +35,7 @@ examples/output/
 .DS_Store
 
 # Local scratch
+
 
 
 

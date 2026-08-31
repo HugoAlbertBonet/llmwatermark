@@ -27,7 +27,7 @@ classifiers = [
 
 # The core package and the detector depend on numpy only. Every inference
 # backend is an optional extra, so installing this tool never pulls torch or
-# eight inference stacks. See "Dependency policy" in .
+# eight inference stacks.
 dependencies = ["numpy>=1.22"]
 
 [project.optional-dependencies]

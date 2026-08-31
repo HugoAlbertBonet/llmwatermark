@@ -34,11 +34,6 @@ examples/output/
 .idea/
 .DS_Store
 
-# Local scratch
-
-
-
-
 # Unsloth writes compiled trainer sources into the working directory the moment it is
 # imported, so running the Unsloth tests from the repo root creates this. It is generated
 # third-party code under the LGPL, and this project is MIT - it must never be committed.

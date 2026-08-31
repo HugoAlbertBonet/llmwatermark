@@ -51,11 +51,27 @@ Had the null been wider than 1.0 here, every false-positive rate this project pu
 would have been wrong.
 
 **Per-key offset.** Texts scored under one key share a single greenlist, so they are not
-independent and a per-key bias would not average away. Measured over 24 keys and 400 human
-texts each, the per-key mean z has sd 0.095 against 0.050 expected from sampling alone,
-implying a genuine per-key offset of sd ~0.08 (observed range -0.26 to +0.11). Marginally
-that widens the null from N(0, 1) to N(0, 1.003) and moves the false-positive rate at z = 4
-from 3.2e-05 to about 3.4e-05. Real, quantified, and not worth acting on.
+independent observations and a per-key bias would not average away. Measured over 24 keys:
+
+| corpus | per-key offset sd | observed range of per-key mean z |
+|---|---|---|
+| human writing | 0.05 - 0.08 | -0.29 to +0.12 |
+| unwatermarked model output | 0.154 | -0.29 to +0.35 |
+
+Model output carries roughly three times the offset of human writing, which follows from
+its token distribution being more concentrated: fewer effective independent draws, so a
+larger deviation from gamma for any particular greenlist.
+
+The consequence is small but worth stating precisely. On human text - the case where a
+false positive means accusing a person - the marginal null widens from N(0, 1) to about
+N(0, 1.001) and the false-positive rate at z = 4 moves from 3.2e-05 to 3.3e-05. The worst
+single key observed, +0.345 on model text, gives 1.3e-04 at that threshold: one in 7,700
+rather than one in 31,600.
+
+**So the published false-positive rate is per-key approximate, not exact.** It is not a
+guarantee that holds identically for every key, and a deployment needing an exact bound
+should measure its own key against a sample of in-domain text rather than trusting the
+nominal figure. Nothing here changes any conclusion in this document.
 
 ## Detection power
 

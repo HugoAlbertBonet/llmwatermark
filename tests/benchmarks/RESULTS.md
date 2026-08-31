@@ -103,15 +103,41 @@ hypotheses.
 
 ### Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M), llama.cpp, 128 new tokens
 
-| build | baseline | watermarked | tok/s off | tok/s on | overhead | per step | noise |
+| model | build | step | baseline | watermarked | overhead | per step | noise |
 |---|---|---|---|---|---|---|---|
-| CPU | 1155 ms | 1230 ms | 110.8 | 104.1 | **+6.45%** | +582 us | 4.78% |
-| CUDA offload | 375 ms | 473 ms | 341.6 | 270.8 | **+26.13%** | +765 us | 2.93% |
+| 0.5B Q4 | CPU | 9.0 ms | 1155 ms | 1230 ms | **+6.45%** | +582 us | 4.78% |
+| 0.5B Q4 | CUDA offload | 2.9 ms | 375 ms | 473 ms | **+26.13%** | +765 us | 2.93% |
+| 1.5B Q4 | CUDA offload | 5.6 ms | 711 ms | 826 ms | **+16.27%** | +904 us | 3.00% |
 
 llama.cpp is the most expensive backend in the project, and GPU offload makes it worse
-rather than better. That is not a paradox: the watermark's cost here is fixed host-side
-work, and offloading the model shrinks the denominator from a 9.8 ms decode step to a
-2.9 ms one.
+rather than better. That is not a paradox, and the three rows above are the demonstration:
+the watermark's cost per step barely moves across them, while the *step* changes by 3x and
+the percentage follows it almost exactly.
+
+**Read the percentage against the step time, not against the other backends.** The
+llama.cpp rows are not comparable with the transformers and vLLM ones, which run a 1.5B
+model in fp16 - the 0.5B Q4 row has a 2.9 ms decode step where vLLM's is 11.8 ms and
+transformers' is 23.4 ms. Against vLLM's 5.22% the honest decomposition is a 1.2x larger
+numerator and a 4.0x smaller denominator, and 1.2 x 4.0 is the 5x that separates them.
+Nearly all of the difference is the model being smaller, not the watermark being worse.
+
+The third row tests that rather than asserting it: the same backend on a 1.5B model, where
+the step roughly doubles and the overhead roughly halves, to +16.27%.
+
+Two real effects remain underneath, and they are why llama.cpp is genuinely the worst case
+rather than merely the smallest-model case:
+
+* **Nothing is amortized.** llama.cpp is single-sequence, so its greenlist serves one
+  token. vLLM at batch 32 runs one `(32, 151936)` kernel per step and divides its cost by
+  32 - about 19 us per generated token, against roughly 900 us here.
+* **Nothing is fused.** numpy runs eight separate passes over a 600 KB array where
+  `torch.compile` emits one kernel that keeps the whole thing in registers.
+
+The per-step cost is also *not* quite fixed on this path: it grew from 765 us to 904 us
+between the 0.5B and 1.5B rows, with an identical vocabulary and identical work. That is
+consistent with the 139 us cold-cache penalty measured directly - a larger model evicts
+more of the buffers between steps - and it means the host path pays more, not less, as the
+model grows.
 
 The cause is measured, not guessed. llama.cpp hands its logits processors a numpy array on
 the host, so the greenlist runs on the CPU where `torch.compile` cannot fuse it. Adding a

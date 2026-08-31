@@ -14,12 +14,51 @@ adapter until the messages disagree.
 
 from __future__ import annotations
 
-from typing import Any, NoReturn
+import os
+from typing import Any, Final, NoReturn
 
-from llmwatermark.config import WatermarkConfig
+from llmwatermark.config import WatermarkConfig, normalize_secret_key
 from llmwatermark.errors import ConfigError
 
-__all__ = ["HostContextStaging", "check_vocabulary", "require_backend"]
+__all__ = [
+    "SECRET_KEY_VARIABLE",
+    "HostContextStaging",
+    "check_vocabulary",
+    "publish_secret_key",
+    "require_backend",
+    "secret_key_from_environment",
+]
+
+# Serving backends build their logits processors inside an engine process, so the watermark
+# parameters have to travel as plain data. The secret key travels separately, here, because
+# engines log the configuration they were built with and a key in that configuration is a
+# key in every log file.
+SECRET_KEY_VARIABLE: Final[str] = "LLMWATERMARK_SECRET_KEY"
+
+
+def publish_secret_key(secret_key: bytes | str) -> None:
+    """Put the key in the environment so a child engine process inherits it.
+
+    Takes the key rather than a config because engines that report their own vocabulary
+    size have to exist before a config can be built, while the key has to be published
+    before the engine is constructed. Requiring a config here would be a cycle.
+    """
+    os.environ[SECRET_KEY_VARIABLE] = normalize_secret_key(secret_key).hex()
+
+
+def secret_key_from_environment(setup: str) -> bytes:
+    """Read the key back inside the engine process.
+
+    :param setup: what the caller should have used to set it, named in the error.
+    """
+    key = os.environ.get(SECRET_KEY_VARIABLE)
+    if not key:
+        raise ConfigError(
+            f"the watermark secret key is missing: {SECRET_KEY_VARIABLE} is not set in the "
+            f"engine process. {setup} sets it in the parent process so the engine inherits "
+            "it; set it yourself if you launch the engine separately."
+        )
+    return bytes.fromhex(key)
 
 
 def require_backend(package: str, extra: str, error: BaseException | None = None) -> NoReturn:

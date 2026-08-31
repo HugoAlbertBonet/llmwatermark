@@ -53,10 +53,16 @@ positions either way - only the watermark strength across h tokens of a generati
 
 from __future__ import annotations
 
-import os
 from typing import Any, Final, NoReturn, cast
 
-from llmwatermark.adapters.base import HostContextStaging, check_vocabulary, require_backend
+from llmwatermark.adapters.base import (
+    SECRET_KEY_VARIABLE,
+    HostContextStaging,
+    check_vocabulary,
+    publish_secret_key,
+    require_backend,
+    secret_key_from_environment,
+)
 from llmwatermark.adapters.vllm_tracker import MOVE_SWAP, MOVE_UNIDIRECTIONAL, RequestTracker
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.errors import ConfigError, SeedingError
@@ -78,7 +84,7 @@ CONFIG_KEY: Final[str] = "llmwatermark"
 
 # The secret key is deliberately not part of additional_config: vLLM logs its engine
 # configuration at startup, and a key in the logs is a key in every log aggregator.
-SECRET_KEY_VARIABLE: Final[str] = "LLMWATERMARK_SECRET_KEY"
+# Defined in adapters.base so every serving backend uses one variable name.
 
 
 def _require_vllm(error: BaseException | None = None) -> NoReturn:
@@ -178,7 +184,7 @@ def watermark_llm_kwargs(
     configuration would be a key in every log file. Set the variable yourself instead if
     your deployment already has a way to inject secrets.
     """
-    os.environ[SECRET_KEY_VARIABLE] = config.secret_key.hex()
+    publish_secret_key(config.secret_key)
     payload = config.to_dict()
     payload["compile"] = compile if isinstance(compile, str) else bool(compile)
     return {
@@ -216,14 +222,8 @@ def _payload_from(vllm_config: Any) -> dict[str, Any]:
 def _config_from(vllm_config: Any) -> WatermarkConfig:
     payload = _payload_from(vllm_config)
     payload.pop("compile", None)
-    key = os.environ.get(SECRET_KEY_VARIABLE)
-    if not key:
-        raise ConfigError(
-            f"the watermark secret key is missing: {SECRET_KEY_VARIABLE} is not set in the "
-            "engine process. watermark_llm_kwargs() sets it in the parent process so the "
-            "engine inherits it; set it yourself if you launch the engine separately."
-        )
-    return WatermarkConfig.from_dict(payload, secret_key=bytes.fromhex(key))
+    key = secret_key_from_environment("watermark_llm_kwargs()")
+    return WatermarkConfig.from_dict(payload, secret_key=key)
 
 
 def _compile_mode_from(vllm_config: Any) -> CompileMode | bool:

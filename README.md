@@ -55,6 +55,7 @@ The core package and the detector depend on **numpy only**. Backends are extras:
 | `llmwatermark[transformers]` | watermarking a `transformers` model, Unsloth included |
 | `llmwatermark[vllm]` | watermarking a vLLM engine |
 | `llmwatermark[llama-cpp]` | watermarking a llama.cpp model |
+| `llmwatermark[sglang]` | watermarking an SGLang engine |
 | `llmwatermark[viz]` | matplotlib, for the plots and the animation |
 
 Detection needs no extra at all - not the model, not torch, not a GPU.
@@ -212,8 +213,9 @@ an order of magnitude. Pass `compile=False` to turn it off.
 | transformers | supported |
 | vLLM | supported |
 | llama.cpp | supported |
+| SGLang | supported |
 | Unsloth | supported, through the transformers adapter - see below |
-| mlx-lm, ExLlamaV2/V3, SGLang, TensorRT-LLM, LMDeploy | planned |
+| mlx-lm, ExLlamaV2/V3, TensorRT-LLM, LMDeploy | planned |
 
 Adapters import their backend lazily, so installing the core package pulls none of them.
 

@@ -101,6 +101,31 @@ step above that floor, still unexplained, and now the largest known item in the 
 A profiler trace from inside the engine subprocess is the next step rather than more
 hypotheses.
 
+### Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M), llama.cpp, 128 new tokens
+
+| build | baseline | watermarked | tok/s off | tok/s on | overhead | noise |
+|---|---|---|---|---|---|---|
+| CPU | 1258 ms | 1406 ms | 101.8 | 91.0 | **+11.8%** | 3.99% |
+| CUDA offload | 374 ms | 570 ms | 341.9 | 224.5 | **+52.3%** | 4.05% |
+
+**llama.cpp is the worst case in the project, and GPU offload makes it worse rather than
+better.** That is not a paradox: the watermark's cost here is fixed host-side work, and
+offloading the model shrinks the denominator from a 9.8 ms decode step to a 2.9 ms one.
+
+The cause is measured, not guessed. llama.cpp hands its logits processors a numpy array on
+the host, so the greenlist runs through the core's **eager numpy path** - 728 us per call at
+this vocabulary, against 60 us for the same work fused by torch.compile on the GPU. Adding a
+*no-op* logits processor costs only 75 us per step, so llama.cpp's own marshalling is not the
+problem; the arithmetic is.
+
+The obvious remedy is a faster host path. A per-seed mask cache was considered and rejected
+on evidence: generated text reuses a context n-gram rarely - roughly 206 distinct contexts in
+206 tokens on the evaluation set - so the hit rate would be near zero. That leaves reducing
+the numpy mixer's temporaries, which is unexplored.
+
+Until then the honest guidance is that llama.cpp costs around 12% on CPU and considerably
+more with GPU offload, and that it is the wrong backend to choose when throughput dominates.
+
 ### facebook/opt-125m, transformers, 128 new tokens
 
 | batch | delta | noise floor | budget | verdict |
@@ -181,8 +206,11 @@ Three measurement bugs were caught by these rules rather than shipped:
 
 ## Open
 
-- **vLLM is at 5.22% against a 2% budget.** The largest known gap in the project, down
-  from 19.08%. Roughly 0.45 ms per step remains above the kernel's bandwidth floor and is
+- **llama.cpp is at 11.8% on CPU and 52.3% with GPU offload**, both far over budget. The
+  cause is the eager numpy greenlist, and the remedy - reducing the numpy mixer's
+  temporaries - is unexplored.
+- **vLLM is at 5.22% against a 2% budget.** The largest known gap among the torch backends,
+  down from 19.08%. Roughly 0.45 ms per step remains above the kernel's bandwidth floor and is
   unexplained; see above for what has been ruled out by measurement.
 - **Speculative decoding is unmeasured.** The vLLM adapter refuses loudly if the row count
   disagrees with the tracker rather than biasing the wrong rows, but that path has not been

@@ -184,6 +184,144 @@ class TestProcessor:
         assert not scores.any()
 
 
+class TestSamplerOrdering:
+    """Reading _init_sampler says delta lands before the warpers. This proves it."""
+
+    def test_delta_still_bites_under_top_k_one(
+        self, llama: object, config: WatermarkConfig
+    ) -> None:
+        """The decisive test, matching the one the transformers adapter carries.
+
+        With top_k=1 the warper leaves a single candidate. If delta were applied after it,
+        nothing could be changed and the output would be identical to the unwatermarked
+        run. A difference proves delta reached the logits first.
+        """
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        baseline = generate(llama, top_k=1, max_tokens=60)
+        try:
+            watermark(llama, config)
+            assert generate(llama, top_k=1, max_tokens=60) != baseline
+        finally:
+            unwatermark(llama)
+
+    def test_greedy_decoding_is_watermarked(self, llama: object, config: WatermarkConfig) -> None:
+        from transformers import AutoTokenizer
+
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        try:
+            watermark(llama, config)
+            text = generate(llama, temperature=0.0)
+        finally:
+            unwatermark(llama)
+        tokenizer = AutoTokenizer.from_pretrained(HF_REPO)
+        assert WatermarkDetector(config, tokenizer).detect(text, min_tokens=8).is_watermarked
+
+
+class TestGenerationPaths:
+    """create_completion, __call__ and create_chat_completion all route through generate.
+
+    The adapter wraps only generate() on that basis, so each entry point is checked rather
+    than assumed.
+    """
+
+    def test_create_completion_is_watermarked(self, llama: object, config: WatermarkConfig) -> None:
+        from transformers import AutoTokenizer
+
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        try:
+            watermark(llama, config)
+            text = llama.create_completion(  # type: ignore[attr-defined]
+                PROMPT, max_tokens=220, temperature=0.8, seed=0
+            )["choices"][0]["text"]
+        finally:
+            unwatermark(llama)
+        tokenizer = AutoTokenizer.from_pretrained(HF_REPO)
+        assert WatermarkDetector(config, tokenizer).detect(text, min_tokens=8).is_watermarked
+
+    def test_chat_completion_is_watermarked(self, llama: object, config: WatermarkConfig) -> None:
+        from transformers import AutoTokenizer
+
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        try:
+            watermark(llama, config)
+            reply = llama.create_chat_completion(  # type: ignore[attr-defined]
+                [{"role": "user", "content": PROMPT}], max_tokens=220, temperature=0.8, seed=0
+            )["choices"][0]["message"]["content"]
+        finally:
+            unwatermark(llama)
+        tokenizer = AutoTokenizer.from_pretrained(HF_REPO)
+        assert WatermarkDetector(config, tokenizer).detect(reply, min_tokens=8).is_watermarked
+
+    def test_streaming_is_watermarked(self, llama: object, config: WatermarkConfig) -> None:
+        from transformers import AutoTokenizer
+
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        try:
+            watermark(llama, config)
+            chunks = llama.create_completion(  # type: ignore[attr-defined]
+                PROMPT, max_tokens=220, temperature=0.8, seed=0, stream=True
+            )
+            text = "".join(chunk["choices"][0]["text"] for chunk in chunks)
+        finally:
+            unwatermark(llama)
+        tokenizer = AutoTokenizer.from_pretrained(HF_REPO)
+        assert WatermarkDetector(config, tokenizer).detect(text, min_tokens=8).is_watermarked
+
+    def test_a_caller_supplied_processor_is_kept(
+        self, llama: object, config: WatermarkConfig
+    ) -> None:
+        """Installing the watermark must not discard processors the caller passed."""
+        from llmwatermark.adapters.llama_cpp import unwatermark, watermark
+
+        seen: list[int] = []
+
+        def spy(input_ids: np.ndarray, scores: np.ndarray) -> np.ndarray:
+            seen.append(len(input_ids))
+            return scores
+
+        try:
+            watermark(llama, config)
+            llama.create_completion(  # type: ignore[attr-defined]
+                PROMPT, max_tokens=12, temperature=0.8, seed=0, logits_processor=[spy]
+            )
+        finally:
+            unwatermark(llama)
+        assert seen, "the caller's own logits processor was dropped"
+
+
+class TestMinHash:
+    def test_a_minhash_watermark_detects(self, llama: object) -> None:
+        """The other scheme, end to end, since its context window is wider than one token."""
+        from transformers import AutoTokenizer
+
+        from llmwatermark.adapters.llama_cpp import config_for_llama, unwatermark, watermark
+
+        config = config_for_llama(
+            llama, secret_key=KEY, delta=4.0, scheme="minhash", context_width=4
+        )
+        try:
+            watermark(llama, config)
+            text = generate(llama)
+        finally:
+            unwatermark(llama)
+        tokenizer = AutoTokenizer.from_pretrained(HF_REPO)
+        assert WatermarkDetector(config, tokenizer).detect(text, min_tokens=8).is_watermarked
+
+
+class TestMissingDependency:
+    def test_the_error_names_the_right_extra(self) -> None:
+        from llmwatermark.adapters.llama_cpp import _require_llama_cpp
+
+        with pytest.raises(ImportError, match=r"llmwatermark\[llama-cpp\]") as excinfo:
+            _require_llama_cpp(ModuleNotFoundError("No module named 'llama_cpp'"))
+        assert "llama-cpp-python" in str(excinfo.value)
+
+
 class TestEndToEnd:
     def test_generated_text_detects(self, llama: object, config: WatermarkConfig) -> None:
         from transformers import AutoTokenizer

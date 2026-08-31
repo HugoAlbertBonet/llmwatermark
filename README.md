@@ -51,7 +51,7 @@ The core package and the detector depend on **numpy only**. Backends are extras:
 
 | extra | for |
 |---|---|
-| `llmwatermark[transformers]` | watermarking a `transformers` model |
+| `llmwatermark[transformers]` | watermarking a `transformers` model, Unsloth included |
 | `llmwatermark[vllm]` | watermarking a vLLM engine |
 | `llmwatermark[llama-cpp]` | watermarking a llama.cpp model |
 | `llmwatermark[viz]` | matplotlib, for the plots and the animation |
@@ -189,9 +189,45 @@ an order of magnitude. Pass `compile=False` to turn it off.
 | transformers | supported |
 | vLLM | supported |
 | llama.cpp | supported |
+| Unsloth | supported, through the transformers adapter - see below |
 | mlx-lm, ExLlamaV2/V3, SGLang, TensorRT-LLM, LMDeploy | planned |
 
 Adapters import their backend lazily, so installing the core package pulls none of them.
+
+### Unsloth
+
+Unsloth needs no adapter of its own. `FastLanguageModel.from_pretrained` returns a patched
+transformers model, and generation still runs HuggingFace's sampling loop, so the
+transformers adapter covers it:
+
+```python
+import unsloth  # before transformers, as Unsloth requires
+from unsloth import FastLanguageModel
+
+from llmwatermark import generate_secret_key
+from llmwatermark.adapters.transformers import config_for_model, watermark
+
+model, tokenizer = FastLanguageModel.from_pretrained("unsloth/Qwen2.5-0.5B-Instruct")
+FastLanguageModel.for_inference(model)
+
+config = config_for_model(model, tokenizer, secret_key=generate_secret_key())
+watermark(model, config)  # every generate() is now watermarked
+```
+
+Two things are worth knowing, and both are tested in
+[tests/test_adapter_unsloth.py](tests/test_adapter_unsloth.py) rather than assumed.
+
+**Build the config after loading, not before.** Unsloth resizes the embedding matrix when a
+chat template adds tokens, and rewrites `model.config.vocab_size` to match. The greenlist
+partitions token IDs, so a config built from the base model would partition a different
+vocabulary and its text would not detect. `config_for_model` reads the model, which is
+already the right answer - Qwen2.5 ships with 151936 embedding rows against 151665 tokenizer
+entries, and the model is the one that counts.
+
+**A fine-tune that adds tokens needs its own config.** The same rule for the same reason:
+watermark and detect with the vocabulary the model actually generates over.
+
+You do not need Unsloth to detect. Detection reads text, so it runs anywhere numpy does.
 
 ## Examples
 

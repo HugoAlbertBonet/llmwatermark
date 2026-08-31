@@ -73,6 +73,7 @@ markers = [
     "requires_transformers: needs the transformers backend installed",
     "requires_vllm: needs the vLLM backend installed (GPU)",
     "requires_llama_cpp: needs llama-cpp-python installed",
+    "requires_unsloth: needs Unsloth installed (NVIDIA GPU)",
     "requires_mlx_lm: needs mlx-lm installed (Apple silicon)",
     "requires_exllamav2: needs ExLlamaV2 installed (NVIDIA GPU)",
     "requires_exllamav3: needs ExLlamaV3 installed (NVIDIA GPU)",

@@ -24,12 +24,17 @@ jobs:
         with:
           enable-cache: true
 
+      # Into a virtualenv, not --system: the runner's system Python is PEP 668
+      # externally managed, which uv refuses outright. --python is also what makes the
+      # matrix real - without it every row would silently test the same interpreter.
       - name: Install the package and its dev tooling
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          uv pip install -e ".[dev]"
 
       # Backend-marked tests stay skipped: CI has no accelerators.
       - name: Core tests
-        run: pytest
+        run: .venv/bin/pytest
 
   torch-agreement:
     name: numpy and torch produce identical greenlists
@@ -43,12 +48,13 @@ jobs:
 
       - name: Install the package, dev tooling and CPU-only torch
         run: |
-          uv pip install --system -e ".[dev]"
-          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       # The cross-backend promise rests on these being bit-identical.
       - name: Greenlist agreement tests
-        run: pytest --backend torch tests/test_greenlist.py
+        run: .venv/bin/pytest --backend torch tests/test_greenlist.py
 
   transformers-adapter:
     name: transformers adapter
@@ -62,9 +68,10 @@ jobs:
 
       - name: Install the package with CPU-only torch and transformers
         run: |
-          uv pip install --system -e ".[dev]"
-          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --system transformers
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install transformers
 
       # Models are built from a config, never downloaded, so this needs no network.
       # The Unsloth file is here for its stand-in test, which reproduces Unsloth's
@@ -72,7 +79,7 @@ jobs:
       # the transformers adapter is safe under Unsloth, so it must run somewhere.
       - name: Adapter tests
         run: |
-          pytest --backend transformers \
+          .venv/bin/pytest --backend transformers \
             tests/test_adapter_transformers.py tests/test_adapter_unsloth.py
 
   # The vLLM adapter's row bookkeeping runs in the core suite above; the engine tests
@@ -89,21 +96,25 @@ jobs:
           enable-cache: true
 
       - name: Install the package and its dev tooling
-        run: uv pip install --system -e ".[dev]"
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Format check
-        run: ruff format --check .
+        run: .venv/bin/ruff format --check .
 
+      # Deliberately with no backend installed. mypy's answer depends on what is present,
+      # so the quality job pins one environment and the code type-checks in it.
       - name: Type-check
-        run: mypy
+        run: .venv/bin/mypy
 
       # The README is verified rather than asserted: its snippets must parse and the
       # symbols they import must exist.
       - name: README and examples
-        run: pytest tests/test_readme.py
+        run: .venv/bin/pytest tests/test_readme.py
 
   dependency-policy:
     name: core install pulls numpy only
@@ -116,11 +127,13 @@ jobs:
           enable-cache: true
 
       - name: Install the core package with no extras
-        run: uv pip install --system .
+        run: |
+          uv venv --python 3.12
+          uv pip install .
 
       - name: Assert no backend or plotting dependency was installed
         run: |
-          python - <<'PY'
+          .venv/bin/python - <<'PY'
           import importlib.util, sys
           forbidden = ["torch", "transformers", "vllm", "matplotlib"]
           found = [m for m in forbidden if importlib.util.find_spec(m) is not None]

@@ -183,12 +183,14 @@ class WatermarkProcessor:
         the device should slice ``[:, -h:]`` themselves and call :meth:`apply`, which
         avoids the host round trip entirely.
         """
-        context, valid = context_matrix(histories, self.config.h)
+        rows, flags = context_matrix(histories, self.config.h)
+        context: Any = rows
+        valid: Any = flags
         if is_torch(logits):
             import torch
 
-            context = torch.as_tensor(context, device=logits.device)
-            valid = torch.as_tensor(valid, device=logits.device)
+            context = torch.as_tensor(rows, device=logits.device)
+            valid = torch.as_tensor(flags, device=logits.device)
         return self.apply(logits, context, valid)
 
     def _validate(self, logits: Any, context: Any, valid: Any) -> None:

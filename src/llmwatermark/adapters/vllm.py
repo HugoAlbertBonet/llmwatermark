@@ -56,6 +56,7 @@ from __future__ import annotations
 import os
 from typing import Any, Final, NoReturn, cast
 
+from llmwatermark.adapters.base import HostContextStaging, check_vocabulary, require_backend
 from llmwatermark.adapters.vllm_tracker import MOVE_SWAP, MOVE_UNIDIRECTIONAL, RequestTracker
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.errors import ConfigError, SeedingError
@@ -81,10 +82,7 @@ SECRET_KEY_VARIABLE: Final[str] = "LLMWATERMARK_SECRET_KEY"
 
 
 def _require_vllm(error: BaseException | None = None) -> NoReturn:
-    raise ImportError(
-        "the vLLM adapter needs the vllm package, which is an optional extra. "
-        'Install it with:\n\n    pip install "llmwatermark[vllm]"\n'
-    ) from error
+    require_backend("vllm", "vllm", error)
 
 
 try:
@@ -116,7 +114,7 @@ class WatermarkLogitsProcessor(LogitsProcessor):  # type: ignore[misc]
         self.device = device
         self.processor = WatermarkProcessor(config, compile=_compile_mode_from(vllm_config))
         self.tracker = RequestTracker()
-        self._buffers: tuple[Any, Any, Any, Any] | None = None
+        self._staging = HostContextStaging()
         _check_vocabulary(vllm_config, config)
 
     def is_argmax_invariant(self) -> bool:
@@ -155,46 +153,8 @@ class WatermarkLogitsProcessor(LogitsProcessor):  # type: ignore[misc]
         context, valid = self.tracker.contexts(self.config.h)
         if not valid.any():
             return logits
-        device_context, device_valid = self._stage(context, valid, logits.device)
+        device_context, device_valid = self._staging.stage(context, valid, logits.device)
         return self.processor.apply(logits, device_context, device_valid)
-
-    def _stage(self, context: Any, valid: Any, device: Any) -> tuple[Any, Any]:
-        """Move this step's context to the device without stalling the pipeline.
-
-        The context is assembled on the host, so it has to be copied every step. Handing
-        a pageable array straight to ``torch.as_tensor(..., device=...)`` makes that copy
-        *blocking*, which drains vLLM's queued GPU work once per decode step. The copy
-        itself is tens of microseconds; the bubble it opens is measured in milliseconds.
-
-        Staging through reusable pinned buffers keeps the copy asynchronous, and reusing
-        them means no allocation on the hot path either.
-        """
-        import torch
-
-        rows, window = context.shape
-        buffers = self._buffers
-        if buffers is None or buffers[0].shape[0] < rows or buffers[0].shape[1] != window:
-            capacity = max(rows, 2 * (buffers[0].shape[0] if buffers else 0), 32)
-            try:
-                host_context = torch.empty((capacity, window), dtype=torch.int64, pin_memory=True)
-                host_valid = torch.empty(capacity, dtype=torch.bool, pin_memory=True)
-            except RuntimeError:  # pragma: no cover - pinned memory is not always available
-                host_context = torch.empty((capacity, window), dtype=torch.int64)
-                host_valid = torch.empty(capacity, dtype=torch.bool)
-            buffers = (
-                host_context,
-                host_valid,
-                torch.empty((capacity, window), dtype=torch.int64, device=device),
-                torch.empty(capacity, dtype=torch.bool, device=device),
-            )
-            self._buffers = buffers
-
-        host_context, host_valid, device_context, device_valid = buffers
-        host_context.numpy()[:rows] = context
-        host_valid.numpy()[:rows] = valid
-        device_context[:rows].copy_(host_context[:rows], non_blocking=True)
-        device_valid[:rows].copy_(host_valid[:rows], non_blocking=True)
-        return device_context[:rows], device_valid[:rows]
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.tracker!r})"
@@ -294,10 +254,4 @@ def _check_vocabulary(vllm_config: Any, config: WatermarkConfig) -> None:
         actual = _vocab_size_of(vllm_config)
     except (ConfigError, AttributeError):  # pragma: no cover - depends on the vLLM build
         return
-    if actual != config.vocab_size:
-        raise ConfigError(
-            f"vLLM generates over {actual} token IDs but the watermark config declares "
-            f"vocab_size={config.vocab_size}. The greenlist partitions token IDs, so the "
-            "two must match exactly. Build the config with "
-            "llmwatermark.adapters.vllm.config_for_llm(llm, secret_key=...)."
-        )
+    check_vocabulary(actual, config, "vLLM")

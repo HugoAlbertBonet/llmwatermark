@@ -26,6 +26,7 @@ __all__ = [
     "check_vocabulary",
     "publish_secret_key",
     "require_backend",
+    "resolve_vocab_size",
     "secret_key_from_environment",
 ]
 
@@ -87,6 +88,19 @@ def check_vocabulary(actual: int | None, config: WatermarkConfig, source: str) -
         "match exactly. Build the config from the model rather than the tokenizer: a padded "
         "embedding matrix makes model vocab_size larger than len(tokenizer)."
     )
+
+
+def resolve_vocab_size(parameters: dict[str, Any], detected: int) -> int:
+    """Take an explicit ``vocab_size`` out of the caller's keyword arguments, if present.
+
+    Every ``config_for_*`` helper reads the size from the backend and forwards the rest of
+    its keyword arguments to the config. A caller who passes ``vocab_size`` explicitly would
+    otherwise collide with that and get "got multiple values for keyword argument", which
+    says nothing about what to do. Popping it here lets the explicit value win and reach
+    :func:`check_vocabulary`, which reports a mismatch in terms of the two numbers.
+    """
+    override = parameters.pop("vocab_size", None)
+    return int(detected) if override is None else int(override)
 
 
 class HostContextStaging:

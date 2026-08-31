@@ -30,7 +30,7 @@ from typing import Any, NoReturn
 
 import numpy as np
 
-from llmwatermark.adapters.base import check_vocabulary, require_backend
+from llmwatermark.adapters.base import check_vocabulary, require_backend, resolve_vocab_size
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.processor import WatermarkProcessor
 
@@ -173,9 +173,14 @@ def config_for_llama(llama: Any, *, secret_key: bytes | str, **parameters: Any) 
             "could not read a vocabulary size from this Llama object; pass vocab_size "
             "explicitly to WatermarkConfig.from_tokenizer()."
         )
-    return WatermarkConfig.from_tokenizer(
-        LlamaCppVocabulary(llama), vocab_size=size, secret_key=secret_key, **parameters
+    config = WatermarkConfig.from_tokenizer(
+        LlamaCppVocabulary(llama),
+        vocab_size=resolve_vocab_size(parameters, size),
+        secret_key=secret_key,
+        **parameters,
     )
+    check_vocabulary(size, config, "llama.cpp")
+    return config
 
 
 def _piece_count(vocab: Any, declared: int) -> int:

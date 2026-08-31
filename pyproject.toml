@@ -64,6 +64,9 @@ filterwarnings = [
     "ignore::DeprecationWarning:torch.*",
     "ignore::FutureWarning:torch",
     "ignore::FutureWarning:torch.*",
+    # SGLang leaves its zmq context to the garbage collector when an engine shuts down.
+    # That is its teardown, not ours, and escalating it would fail every engine test.
+    "ignore:Unclosed context:ResourceWarning",
     # torch.cuda.set_sync_debug_mode warns that it is a prototype every time it is called,
     # including when the sync-debug tests reset it.
     "ignore:Synchronization debug mode is a prototype feature:UserWarning",

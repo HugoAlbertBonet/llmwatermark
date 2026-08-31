@@ -61,7 +61,7 @@ from __future__ import annotations
 
 from typing import Any, NoReturn
 
-from llmwatermark.adapters.base import require_backend
+from llmwatermark.adapters.base import check_vocabulary, require_backend, resolve_vocab_size
 from llmwatermark.config import WatermarkConfig
 from llmwatermark.processor import CompileMode, WatermarkProcessor
 
@@ -168,7 +168,12 @@ def config_for_model(
     produces entirely different greenlists, so the value is taken from the model rather
     than the tokenizer, explicitly and in one documented place.
     """
-    vocab_size = int(model.config.vocab_size)
-    return WatermarkConfig.from_tokenizer(
-        tokenizer, vocab_size=vocab_size, secret_key=secret_key, **parameters
+    detected = int(model.config.vocab_size)
+    config = WatermarkConfig.from_tokenizer(
+        tokenizer,
+        vocab_size=resolve_vocab_size(parameters, detected),
+        secret_key=secret_key,
+        **parameters,
     )
+    check_vocabulary(detected, config, "this model")
+    return config

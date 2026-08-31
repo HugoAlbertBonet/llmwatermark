@@ -61,6 +61,7 @@ from llmwatermark.adapters.base import (
     check_vocabulary,
     publish_secret_key,
     require_backend,
+    resolve_vocab_size,
     secret_key_from_environment,
 )
 from llmwatermark.adapters.vllm_tracker import MOVE_SWAP, MOVE_UNIDIRECTIONAL, RequestTracker
@@ -203,9 +204,15 @@ def config_for_llm(
     wrong one produces entirely different greenlists.
     """
     resolved = llm.get_tokenizer() if tokenizer is None else tokenizer
-    return WatermarkConfig.from_tokenizer(
-        resolved, vocab_size=_vocab_size_of(llm), secret_key=secret_key, **parameters
+    detected = _vocab_size_of(llm)
+    config = WatermarkConfig.from_tokenizer(
+        resolved,
+        vocab_size=resolve_vocab_size(parameters, detected),
+        secret_key=secret_key,
+        **parameters,
     )
+    check_vocabulary(detected, config, "vLLM")
+    return config
 
 
 def _payload_from(vllm_config: Any) -> dict[str, Any]:

@@ -62,6 +62,7 @@ from llmwatermark.adapters.base import (
     check_vocabulary,
     publish_secret_key,
     require_backend,
+    resolve_vocab_size,
     secret_key_from_environment,
 )
 from llmwatermark.adapters.sglang_requests import check_row_alignment, histories_from
@@ -216,11 +217,12 @@ def config_for_engine(
     produces entirely different greenlists.
     """
     resolved = _tokenizer_of(engine) if tokenizer is None else tokenizer
-    size = _vocab_size_of(engine)
+    detected = _vocab_size_of(engine)
+    size = resolve_vocab_size(parameters, detected)
     config = WatermarkConfig.from_tokenizer(
         resolved, vocab_size=size, secret_key=secret_key, **parameters
     )
-    check_vocabulary(size, config, "SGLang")
+    check_vocabulary(detected, config, "SGLang")
     return config
 
 

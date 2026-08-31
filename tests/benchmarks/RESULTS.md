@@ -103,28 +103,53 @@ hypotheses.
 
 ### Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M), llama.cpp, 128 new tokens
 
-| build | baseline | watermarked | tok/s off | tok/s on | overhead | noise |
-|---|---|---|---|---|---|---|
-| CPU | 1258 ms | 1406 ms | 101.8 | 91.0 | **+11.8%** | 3.99% |
-| CUDA offload | 374 ms | 570 ms | 341.9 | 224.5 | **+52.3%** | 4.05% |
+| build | baseline | watermarked | tok/s off | tok/s on | overhead | per step | noise |
+|---|---|---|---|---|---|---|---|
+| CPU | 1155 ms | 1230 ms | 110.8 | 104.1 | **+6.45%** | +582 us | 4.78% |
+| CUDA offload | 375 ms | 473 ms | 341.6 | 270.8 | **+26.13%** | +765 us | 2.93% |
 
-**llama.cpp is the worst case in the project, and GPU offload makes it worse rather than
-better.** That is not a paradox: the watermark's cost here is fixed host-side work, and
-offloading the model shrinks the denominator from a 9.8 ms decode step to a 2.9 ms one.
+llama.cpp is the most expensive backend in the project, and GPU offload makes it worse
+rather than better. That is not a paradox: the watermark's cost here is fixed host-side
+work, and offloading the model shrinks the denominator from a 9.8 ms decode step to a
+2.9 ms one.
 
 The cause is measured, not guessed. llama.cpp hands its logits processors a numpy array on
-the host, so the greenlist runs through the core's **eager numpy path** - 728 us per call at
-this vocabulary, against 60 us for the same work fused by torch.compile on the GPU. Adding a
-*no-op* logits processor costs only 75 us per step, so llama.cpp's own marshalling is not the
-problem; the arithmetic is.
+the host, so the greenlist runs on the CPU where `torch.compile` cannot fuse it. Adding a
+*no-op* logits processor costs only 75 us per step, so llama.cpp's own marshalling is not
+the problem; the arithmetic is.
 
-The obvious remedy is a faster host path. A per-seed mask cache was considered and rejected
-on evidence: generated text reuses a context n-gram rarely - roughly 206 distinct contexts in
-206 tokens on the evaluation set - so the hit rate would be near zero. That leaves reducing
-the numpy mixer's temporaries, which is unexplored.
+**These figures are after optimization.** The first measurement was +11.82% on CPU and
++52.33% with offload, at +1162 us and +1531 us per step. `llmwatermark.fastpath` roughly
+halved both by rewriting the same function for numpy's cost model - see that module for
+what changed and why each part was worth it. The mask itself went from 526 us to 150 us and
+the bias from 180 us to 45 us, so `apply` at batch 1 costs 258 us where it cost 1208 us.
 
-Until then the honest guidance is that llama.cpp costs around 12% on CPU and considerably
-more with GPU offload, and that it is the wrong backend to choose when throughput dominates.
+Three measured results shaped it, and two rejected candidates are worth recording:
+
+| change | effect | kept |
+|---|---|---|
+| `% divisor` to bitwise AND (power-of-two) or Lemire's test | 219 us to 25 / 35 us | yes |
+| reused thread-local buffers instead of fresh 600 KB temporaries | mixer 326 us to 134 us | yes |
+| unsigned view, removing the sign-extension masks | 3 fewer passes | yes |
+| bias scale as `np.float32` rather than a Python float | 180 us to 45 us | yes |
+| blocking the loop so the working set fits L2 | best case 8%, worse below 16k | no |
+| a reused float buffer for `green * scale` | 44.7 us to 41.0 us | no |
+
+Integer division was the single largest item and the least obvious: it has no SIMD form, so
+it alone cost 219 us of a 526 us mask. Lemire's replacement is an identity, not an
+approximation, and was checked against `%` over all 2**32 unsigned values for six divisors
+before adoption - zero mismatches.
+
+**Roughly 430 us per step is still unaccounted for**, above the 258 us the kernel costs in
+isolation. Two parts of it are measured: llama.cpp's own processor marshalling is 75 us,
+and running with caches cold - which is the real situation, since the model's forward pass
+evicts everything between steps - adds 139 us. The remaining ~215 us is not explained.
+Blocking was the obvious remedy and did not work, so the next candidate is reducing the
+number of full-width passes rather than making each one cheaper.
+
+Nothing here changes a single greenlist decision. `tests/test_fastpath.py` asserts the fast
+path agrees with the shared implementation over whole vocabularies, for both mixer widths
+and six divisors, and the golden vectors are untouched.
 
 ### facebook/opt-125m, transformers, 128 new tokens
 
@@ -206,9 +231,10 @@ Three measurement bugs were caught by these rules rather than shipped:
 
 ## Open
 
-- **llama.cpp is at 11.8% on CPU and 52.3% with GPU offload**, both far over budget. The
-  cause is the eager numpy greenlist, and the remedy - reducing the numpy mixer's
-  temporaries - is unexplored.
+- **llama.cpp is at 6.5% on CPU and 26.1% with GPU offload**, down from 11.8% and 52.3%
+  but still over budget. About 430 us per step sits above what the kernel costs in
+  isolation; 75 us of that is llama.cpp's marshalling and 139 us is cold caches, and the
+  rest is unexplained.
 - **vLLM is at 5.22% against a 2% budget.** The largest known gap among the torch backends,
   down from 19.08%. Roughly 0.45 ms per step remains above the kernel's bandwidth floor and is
   unexplained; see above for what has been ruled out by measurement.

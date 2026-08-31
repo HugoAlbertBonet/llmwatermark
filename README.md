@@ -175,7 +175,7 @@ The watermark costs a **fixed ~0.25 ms per decode step** and does not scale with
 so its share depends on the model's step time. Under `transformers` on a 1.5B model the
 overhead is below measurement noise, with the error bar itself inside a 2% budget.
 
-**Under vLLM it is 5.2% against a 2% target**, and under llama.cpp 12% on CPU or 52% with
+**Under vLLM it is 5.2% against a 2% target**, and under llama.cpp 6.5% on CPU or 26% with
 GPU offload - llama.cpp runs the greenlist on the host in numpy rather than as a fused GPU
 kernel, and offloading the model only shrinks the step it is measured against. Numbers, method and what is still unexplained: [RESULTS.md](tests/benchmarks/RESULTS.md).
 

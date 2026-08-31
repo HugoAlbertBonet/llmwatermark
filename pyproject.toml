@@ -105,6 +105,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 files = ["src"]
 strict = true
 warn_unreachable = true
+# Subclassing an optional backend's class needs a `type: ignore[misc]` when that backend
+# is absent and mypy resolves the base to Any, and does not when it is installed. The
+# quality job installs no backends, so leave the unused case alone rather than making the
+# result depend on what happens to be in the environment.
+warn_unused_ignores = false
 
 # Backend libraries are optional extras, imported lazily inside the adapters that need
 # them. The quality job installs none of them, so their absence must not be an error.

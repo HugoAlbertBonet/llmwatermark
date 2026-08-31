@@ -215,9 +215,14 @@ def _as_array(values: Any, name: str) -> Any:
     if array.ndim == 0:
         array = array.reshape(1)
     dtype = array.dtype
-    is_integer = (not is_torch(array) and np.issubdtype(dtype, np.integer)) or (
-        is_torch(array) and not (dtype.is_floating_point or dtype.is_complex)
-    )
+    if is_torch(array):
+        # torch dtypes carry these flags; numpy's do not, and mypy only knows which is
+        # which when torch happens to be installed, so ask rather than assert.
+        is_integer = not (
+            getattr(dtype, "is_floating_point", False) or getattr(dtype, "is_complex", False)
+        )
+    else:
+        is_integer = bool(np.issubdtype(dtype, np.integer))
     if not is_integer:
         raise SeedingError(f"{name} must be an integer array, got dtype {dtype}.")
     return array

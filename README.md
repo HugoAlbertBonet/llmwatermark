@@ -20,7 +20,8 @@ Measured, not asserted — every number below comes from
 - **Zero false positives** across 3200 human-written texts at the default threshold.
 - **No quality cost** at the default strength, by held-out perplexity and by three blinded
   frontier judges.
-- **~0.25 ms per decode step**, below measurement noise on a 1.5B model under `transformers`.
+- **~0.25 ms per decode step** on the torch backends, a fixed cost that shrinks as a share
+  of the step as models grow - below measurement noise on a 1.5B model under `transformers`.
 - **Detection needs no model, no GPU and no torch** — the detector is numpy and a tokenizer.
 - **The same watermark works across backends**: the seed is HMAC-SHA256 and the greenlist
   mixer is verified bit-identical on numpy, torch-CPU and CUDA.
@@ -171,13 +172,35 @@ your hits will be innocent.
 
 ## Performance
 
-The watermark costs a **fixed ~0.25 ms per decode step** and does not scale with model size,
-so its share depends on the model's step time. Under `transformers` on a 1.5B model the
-overhead is below measurement noise, with the error bar itself inside a 2% budget.
+The watermark costs a **fixed ~0.25 ms per decode step** on the torch backends. It does not
+scale with model size, so **every percentage below shrinks as the model grows** - the
+watermark's cost stays put while the decode step it is measured against gets longer.
 
-**Under vLLM it is 5.2% against a 2% target**, and under llama.cpp 6.5% on CPU or 26% with
-GPU offload - llama.cpp runs the greenlist on the host in numpy rather than as a fused GPU
-kernel, and offloading the model only shrinks the step it is measured against. Numbers, method and what is still unexplained: [RESULTS.md](tests/benchmarks/RESULTS.md).
+That makes the percentages meaningless without the model they were measured on:
+
+| backend | model | precision | batch | step | overhead |
+|---|---|---|---|---|---|
+| transformers | Qwen2.5-1.5B | bfloat16 | 1 | 23.4 ms | below noise |
+| vLLM | Qwen2.5-1.5B | bfloat16 | 32 | 11.8 ms | **+5.2%** |
+| llama.cpp | Qwen2.5-**0.5B** | **Q4_K_M** | 1 | 2.9 ms | **+26.1%** |
+| llama.cpp | Qwen2.5-1.5B | Q4_K_M | 1 | 5.6 ms | +16.3% |
+
+Read down the `step` column rather than the `overhead` one. llama.cpp's 26% is mostly not
+about llama.cpp: it is a 0.5B model in 4-bit, the cheapest decode step in the project at
+2.9 ms, so a fixed cost occupies eight times the share it does under `transformers`. The
+last two rows are the same backend and the same watermark on a bigger model, and the
+overhead drops by a third. **Quantization shrinks every part of a decode step except the
+watermark**, which is why the watermark looks worst exactly where the model is cheapest.
+
+Two real effects remain underneath. llama.cpp runs the greenlist on the host in numpy
+rather than as a fused GPU kernel, and it is single-sequence, so nothing amortizes across a
+batch the way vLLM's does - about 900 us per generated token against vLLM's 19 us. On that
+host path the cost is also not quite fixed: it grew from 765 us to 904 us between the two
+llama.cpp rows, because a larger model evicts more of the working buffers between steps.
+
+Extrapolating from the fixed cost, a 7B model at a 40 ms step puts the watermark under
+0.6%. Numbers, method and what is still unexplained:
+[RESULTS.md](tests/benchmarks/RESULTS.md).
 
 Compilation is on by default (`compile="auto"`) because the eager path misses the budget by
 an order of magnitude. Pass `compile=False` to turn it off.

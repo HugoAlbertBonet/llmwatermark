@@ -1,8 +1,29 @@
 # llmwatermark
 
-Plug-and-play [KGW-style](https://arxiv.org/abs/2301.10226) watermarking and detection for
-language models. Bias the logits at generation time; recover a statistical signature later
-from the text alone.
+**Prove a language model wrote it — from the text alone, months later, with nothing but a
+tokenizer and a secret key.**
+
+Text produced by a model looks exactly like text produced by a person, and post-hoc
+classifiers that guess from style are unreliable in both directions. Watermarking takes the
+other route: leave the evidence at generation time.
+
+At every step this library hashes the preceding tokens with your key, uses that to split the
+vocabulary into a pseudorandom "greenlist" and the rest, and nudges the model toward the
+greenlist. One token proves nothing — a quarter of them land there by chance. But across a
+few dozen tokens the excess becomes a statistical signature that a one-proportion z-test
+recovers, and nobody without the key can find it, reproduce it, or forge it.
+
+Measured, not asserted — every number below comes from
+[EVAL.md](tests/benchmarks/eval/EVAL.md) and [RESULTS.md](tests/benchmarks/RESULTS.md):
+
+- **Detects** 95% of 256-token passages at a 0.01% false-positive rate (AUC 0.995).
+- **Zero false positives** across 3200 human-written texts at the default threshold.
+- **No quality cost** at the default strength, by held-out perplexity and by three blinded
+  frontier judges.
+- **~0.25 ms per decode step**, below measurement noise on a 1.5B model under `transformers`.
+- **Detection needs no model, no GPU and no torch** — the detector is numpy and a tokenizer.
+- **The same watermark works across backends**: the seed is HMAC-SHA256 and the greenlist
+  mixer is verified bit-identical on numpy, torch-CPU and CUDA.
 
 ```python
 from llmwatermark import generate_secret_key

@@ -21,6 +21,8 @@ htmlcov/
 # Notebooks
 .ipynb_checkpoints/
 
+# Committed: docs/figures holds the rendered README figures
+
 # Models and generated assets
 *.gguf
 *.safetensors
@@ -35,6 +37,7 @@ examples/output/
 # Local scratch
 AGENTS.md.bak
 AGENTS.md
+HANDOFF.md
 
 # Evaluation artefacts (regenerate with tests/benchmarks/eval/)
 tests/benchmarks/eval/generations.jsonl

@@ -67,8 +67,13 @@ jobs:
           uv pip install --system transformers
 
       # Models are built from a config, never downloaded, so this needs no network.
+      # The Unsloth file is here for its stand-in test, which reproduces Unsloth's
+      # generate repatching without needing Unsloth or a GPU; that guard is the reason
+      # the transformers adapter is safe under Unsloth, so it must run somewhere.
       - name: Adapter tests
-        run: pytest --backend transformers tests/test_adapter_transformers.py
+        run: |
+          pytest --backend transformers \
+            tests/test_adapter_transformers.py tests/test_adapter_unsloth.py
 
   # The vLLM adapter's row bookkeeping runs in the core suite above; the engine tests
   # themselves need a GPU and are marked requires_vllm, so they stay skipped here.

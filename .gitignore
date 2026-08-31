@@ -39,6 +39,11 @@ AGENTS.md.bak
 AGENTS.md
 HANDOFF.md
 
+# Unsloth writes compiled trainer sources into the working directory the moment it is
+# imported, so running the Unsloth tests from the repo root creates this. It is generated
+# third-party code under the LGPL, and this project is MIT - it must never be committed.
+unsloth_compiled_cache/
+
 # Evaluation artefacts (regenerate with tests/benchmarks/eval/)
 tests/benchmarks/eval/generations.jsonl
 tests/benchmarks/eval/chunks/

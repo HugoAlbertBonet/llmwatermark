@@ -115,14 +115,25 @@ the watermark's cost per step barely moves across them, while the *step* changes
 the percentage follows it almost exactly.
 
 **Read the percentage against the step time, not against the other backends.** The
-llama.cpp rows are not comparable with the transformers and vLLM ones, which run a 1.5B
-model in fp16 - the 0.5B Q4 row has a 2.9 ms decode step where vLLM's is 11.8 ms and
-transformers' is 23.4 ms. Against vLLM's 5.22% the honest decomposition is a 1.2x larger
+llama.cpp rows are not comparable with the transformers and vLLM ones. Those run a 1.5B
+model at 16 bits - transformers at `float16`, vLLM at the `bfloat16` its config declares -
+where the 0.5B row here is 4-bit `Q4_K_M`. Its decode step is 2.9 ms where vLLM's is 11.8 ms
+and transformers' is 23.4 ms. Against vLLM's 5.22% the decomposition is a 1.2x larger
 numerator and a 4.0x smaller denominator, and 1.2 x 4.0 is the 5x that separates them.
-Nearly all of the difference is the model being smaller, not the watermark being worse.
 
-The third row tests that rather than asserting it: the same backend on a 1.5B model, where
-the step roughly doubles and the overhead roughly halves, to +16.27%.
+The third row controls for **parameter count only**: the same backend on a 1.5B model,
+where the step roughly doubles and the overhead roughly halves, to +16.27%. It does not
+control for precision, and precision turns out to be the larger term. Batch-1 decode is
+bound by streaming the weights, and Q4_K_M is 1.1 GB against bf16's 2.9 GB - 2.76x less
+traffic per step. That accounts for most of the 4.18x gap between this row's 5.6 ms step
+and transformers' 23.4 ms one, with llama.cpp's leaner C++ loop taking the rest.
+
+So a like-for-like comparison against transformers does not exist in this table. The
+closest honest statement is the ratio the whole document is built on: the watermark costs
+roughly 900 us per step on this path, so it is 16% of a 5.6 ms step, would be about 4% of
+transformers' 23.4 ms one, and would be under 2% of a 7B model's. Quantizing a model
+shrinks every part of the step *except* the watermark, which is why it shows up worst
+exactly where the model has been made cheapest.
 
 Two real effects remain underneath, and they are why llama.cpp is genuinely the worst case
 rather than merely the smallest-model case:

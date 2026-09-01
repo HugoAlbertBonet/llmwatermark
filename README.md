@@ -230,7 +230,9 @@ import sglang
 
 from llmwatermark import generate_secret_key
 from llmwatermark.adapters.sglang import (
-    config_for_engine, watermark_engine_kwargs, watermark_sampling_params,
+    config_for_engine,
+    watermark_engine_kwargs,
+    watermark_sampling_params,
 )
 
 key = generate_secret_key()

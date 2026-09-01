@@ -219,6 +219,48 @@ an order of magnitude. Pass `compile=False` to turn it off.
 
 Adapters import their backend lazily, so installing the core package pulls none of them.
 
+### SGLang
+
+SGLang applies custom logit processors before temperature and before every warper, so delta
+lands in the same place it does on the other backends. Two calls set it up - one for the
+engine, one per request:
+
+```python
+import sglang
+
+from llmwatermark import generate_secret_key
+from llmwatermark.adapters.sglang import (
+    config_for_engine, watermark_engine_kwargs, watermark_sampling_params,
+)
+
+key = generate_secret_key()
+engine = sglang.Engine(model_path="Qwen/Qwen2.5-0.5B-Instruct", **watermark_engine_kwargs(key))
+config = config_for_engine(engine, secret_key=key)
+
+output = engine.generate(prompt, **watermark_sampling_params(config, max_new_tokens=256))
+```
+
+`watermark_engine_kwargs` takes the key rather than the config, because the engine is what
+reports the vocabulary size a config needs, and the key has to reach the environment before
+the scheduler process starts. It also passes `enable_custom_logit_processor=True`, which
+SGLang requires, and it **turns off the overlap scheduler**.
+
+That last part is not tuning, and it is worth understanding before you work around it.
+Under overlap, SGLang starts the next forward pass before the previous token has been
+appended to the request history, so a logits processor reads a history that is one token
+stale. The watermark then keys each greenlist one position behind the detector, and
+**nothing fails**: the logits are biased, the text is fluent, and it simply never detects.
+Measured on Qwen2.5-0.5B at the default delta, overlap on gives a green fraction of 0.128
+against a 0.25 chance rate; overlap off gives 0.500 from the same code. Because a silent
+failure is worse than a slow one, the adapter also re-checks the setting inside the
+scheduler and raises if an engine was built without these kwargs. Overlap is a throughput
+feature, so watermarked SGLang serving costs something; that cost is not yet measured.
+
+Every watermarked request needs `watermark_sampling_params`, since SGLang applies custom
+processors per request rather than per engine. Ordinary sampling settings pass straight
+through it. Speculative decoding is refused: draft positions are not in the request history
+yet, so their greenlists cannot be computed rather than merely being inconvenient.
+
 ### Unsloth
 
 Unsloth needs no adapter of its own. `FastLanguageModel.from_pretrained` returns a patched

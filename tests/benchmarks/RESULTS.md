@@ -101,6 +101,24 @@ step above that floor, still unexplained, and now the largest known item in the 
 A profiler trace from inside the engine subprocess is the next step rather than more
 hypotheses.
 
+### SGLang - not measured
+
+The SGLang adapter is verified for correctness (`tests/test_adapter_sglang.py`, nine tests
+against a live engine) but has no throughput row yet, and the gap is deliberate rather than
+overlooked: quoting a number here would take more care than the other backends did.
+
+Watermarked SGLang has to run with `disable_overlap_schedule=True`, because under overlap
+the request history is one token stale and the output stops detecting. Overlap is a
+throughput feature, so the honest comparison is not watermark-off against watermark-on. It
+is three arms - stock SGLang, SGLang with overlap disabled, and SGLang with overlap disabled
+plus the watermark - which separates what the watermark costs from what disabling overlap
+costs. Reporting the two together as one figure would overstate the watermark, and reporting
+only the last two would hide a cost the user pays to have it.
+
+The environment is also not the one a serving benchmark should use: FlashInfer needs a CUDA
+toolkit this machine lacks, so the engine ran on Triton attention with PyTorch sampling and
+CUDA graphs disabled. That is fine for correctness and wrong for throughput.
+
 ### Qwen2.5-0.5B-Instruct-GGUF (Q4_K_M), llama.cpp, 128 new tokens
 
 | model | build | step | baseline | watermarked | overhead | per step | noise |
@@ -268,6 +286,8 @@ Three measurement bugs were caught by these rules rather than shipped:
 
 ## Open
 
+- **SGLang has no throughput figure at all**, and needs a three-arm measurement to get one
+  that means anything, since the watermark requires the overlap scheduler off.
 - **llama.cpp is at 6.5% on CPU and 26.1% with GPU offload**, down from 11.8% and 52.3%
   but still over budget. About 430 us per step sits above what the kernel costs in
   isolation; 75 us of that is llama.cpp's marshalling and 139 us is cold caches, and the

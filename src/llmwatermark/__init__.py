@@ -32,7 +32,7 @@ from llmwatermark.errors import (
 from llmwatermark.processor import WatermarkProcessor
 from llmwatermark.vocab import fingerprint_from_tokenizer
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "DEFAULT_DELTA",

@@ -6,8 +6,10 @@ build/
 dist/
 .eggs/
 
-# Environments
-.venv/
+# Environments. The glob matters: backend venvs get suffixed names (.venv-sglang,
+# .venv-cuda) and a bare ".venv/" does not match them, so a source build walks several
+# gigabytes of CUDA wheels looking for files to package.
+.venv*/
 venv/
 env/
 
